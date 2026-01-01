@@ -1,0 +1,42 @@
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+ENV/
+
+# Node / Expo / React Native
+node_modules/
+.expo/
+.expo-shared/
+dist/
+build/
+coverage/
+.parcel-cache/
+.turbo/
+.next/
+
+# Xcode / Android (if you add native projects later)
+ios/build/
+android/build/
+
+
