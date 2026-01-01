@@ -1,42 +1,91 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, KeyboardAvoidingView, Platform, ImageBackground, Dimensions, Keyboard, TouchableWithoutFeedback } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  KeyboardAvoidingView,
+  Platform,
+  Dimensions,
+  Keyboard,
+  TouchableWithoutFeedback,
+  Alert,
+} from 'react-native';
 import { Link, router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { StatusBar } from 'expo-status-bar';
+import { isClerkAPIResponseError, useSignIn } from '@clerk/clerk-expo';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleLogin = () => {
-    // Dummy login
-    router.replace('/(tabs)');
+  const { isLoaded, signIn, setActive } = useSignIn();
+
+  const handleLogin = async () => {
+    if (!isLoaded) return;
+    if (!email || !password) {
+      Alert.alert('Missing info', 'Please enter your email and password.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      const result = await signIn.create({
+        identifier: email,
+        password,
+      });
+
+      if (result.status !== 'complete') {
+        Alert.alert('Login incomplete', 'Please finish signing in.');
+        return;
+      }
+
+      await setActive({ session: result.createdSessionId });
+      router.replace('/(tabs)');
+    } catch (err: unknown) {
+      if (isClerkAPIResponseError(err)) {
+        Alert.alert(
+          'Login failed',
+          err.errors?.[0]?.longMessage ?? 'Please try again.'
+        );
+      } else {
+        Alert.alert('Login failed', 'Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.container}>
-        <StatusBar style="light" />
-        
+        <StatusBar style='light' />
+
         {/* Sophisticated Background */}
         <View style={styles.backgroundContainer}>
           <View style={styles.backgroundCircle1} />
           <View style={styles.backgroundCircle2} />
         </View>
 
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.keyboardView}
         >
           <View style={styles.content}>
-            
             <View style={styles.header}>
               <View style={styles.logoContainer}>
-                <FontAwesome name="paw" size={40} color={COLORS.primary} />
+                <FontAwesome
+                  name='paw'
+                  size={40}
+                  color={COLORS.primary}
+                />
               </View>
               <Text style={styles.appName}>FindMyVet</Text>
               <Text style={styles.welcomeText}>Welcome Back</Text>
@@ -47,14 +96,19 @@ export default function LoginScreen() {
               <View style={styles.inputWrapper}>
                 <Text style={styles.inputLabel}>Email Address</Text>
                 <View style={styles.inputContainer}>
-                  <FontAwesome name="envelope-o" size={20} color={COLORS.textLight} style={styles.inputIcon} />
+                  <FontAwesome
+                    name='envelope-o'
+                    size={20}
+                    color={COLORS.textLight}
+                    style={styles.inputIcon}
+                  />
                   <TextInput
-                    placeholder="name@example.com"
+                    placeholder='name@example.com'
                     style={styles.input}
                     value={email}
                     onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
+                    autoCapitalize='none'
+                    keyboardType='email-address'
                     placeholderTextColor={COLORS.textLight}
                   />
                 </View>
@@ -63,9 +117,14 @@ export default function LoginScreen() {
               <View style={styles.inputWrapper}>
                 <Text style={styles.inputLabel}>Password</Text>
                 <View style={styles.inputContainer}>
-                  <FontAwesome name="lock" size={24} color={COLORS.textLight} style={styles.inputIcon} />
+                  <FontAwesome
+                    name='lock'
+                    size={24}
+                    color={COLORS.textLight}
+                    style={styles.inputIcon}
+                  />
                   <TextInput
-                    placeholder="Enter your password"
+                    placeholder='Enter your password'
                     style={styles.input}
                     value={password}
                     onChangeText={setPassword}
@@ -79,11 +138,13 @@ export default function LoginScreen() {
                 <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
               </TouchableOpacity>
 
-              <Button 
-                title="Log In" 
-                onPress={handleLogin} 
+              <Button
+                title='Log In'
+                onPress={handleLogin}
                 style={styles.loginButton}
-                size="lg"
+                size='lg'
+                loading={submitting}
+                disabled={!isLoaded}
               />
 
               <View style={styles.dividerContainer}>
@@ -94,26 +155,40 @@ export default function LoginScreen() {
 
               <View style={styles.socialButtonsContainer}>
                 <TouchableOpacity style={styles.socialButton}>
-                  <FontAwesome name="google" size={20} color="#DB4437" />
+                  <FontAwesome
+                    name='google'
+                    size={20}
+                    color='#DB4437'
+                  />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.socialButton}>
-                  <FontAwesome name="apple" size={22} color="#000000" />
+                  <FontAwesome
+                    name='apple'
+                    size={22}
+                    color='#000000'
+                  />
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.socialButton}>
-                  <FontAwesome name="facebook" size={20} color="#4267B2" />
+                  <FontAwesome
+                    name='facebook'
+                    size={20}
+                    color='#4267B2'
+                  />
                 </TouchableOpacity>
               </View>
             </View>
 
             <View style={styles.footer}>
-              <Text style={styles.footerText}>Don't have an account? </Text>
-              <Link href="/auth/register" asChild>
+              <Text style={styles.footerText}>Don’t have an account? </Text>
+              <Link
+                href='/auth/register'
+                asChild
+              >
                 <TouchableOpacity>
                   <Text style={styles.signupText}>Sign Up</Text>
                 </TouchableOpacity>
               </Link>
             </View>
-
           </View>
         </KeyboardAvoidingView>
       </View>
@@ -161,7 +236,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: SPACING.xl,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: height * 0.12,
   },
   header: {
     alignItems: 'center',

@@ -46,12 +46,12 @@ export default function PetNameScreen() {
               </View>
               <Text style={styles.step}>Step 1 of 4</Text>
               <Text style={styles.title}>Tell us about your pet</Text>
-              <Text style={styles.subtitle}>What's your furry friend's name?</Text>
+              <Text style={styles.subtitle}>What’s your furry friend’s name?</Text>
             </View>
 
             <View style={styles.formCard}>
               <View style={styles.inputWrapper}>
-                <Text style={styles.label}>Pet's Name</Text>
+                <Text style={styles.label}>Pet’s Name</Text>
                 <View style={styles.inputContainer}>
                   <TextInput
                     placeholder="e.g. Max"

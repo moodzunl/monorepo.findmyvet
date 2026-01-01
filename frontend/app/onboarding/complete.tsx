@@ -29,7 +29,7 @@ export default function CompleteScreen() {
             </View>
             
             <Text style={styles.title}>All Set!</Text>
-            <Text style={styles.subtitle}>Your profile has been created successfully. You're ready to find the best care for your pet.</Text>
+            <Text style={styles.subtitle}>Your profile has been created successfully. You’re ready to find the best care for your pet.</Text>
 
             <View style={styles.spacer} />
 

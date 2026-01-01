@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
@@ -10,6 +9,7 @@ import { Clinic, Appointment } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
 import { AppointmentCard } from '../../components/ui/AppointmentCard';
+import { useUser } from '@clerk/clerk-expo';
 
 // Mock Data
 const NEARBY_CLINICS: Clinic[] = [
@@ -61,6 +61,9 @@ const UPCOMING_APPOINTMENT: Appointment = {
 };
 
 export default function HomeScreen() {
+  const { user } = useUser();
+  const greetingName = user?.firstName ?? user?.fullName ?? 'there';
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -68,7 +71,7 @@ export default function HomeScreen() {
         <View style={styles.headerContent}>
           <View>
             <Text style={styles.greeting}>Good Morning,</Text>
-            <Text style={styles.username}>Oscar & Max</Text>
+            <Text style={styles.username}>{greetingName}</Text>
           </View>
           <Button 
             title="SOS" 

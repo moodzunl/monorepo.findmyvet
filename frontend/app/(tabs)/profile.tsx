@@ -1,24 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
 import { router } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
-import { User } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
+import { useClerk, useUser } from '@clerk/clerk-expo';
 
-// Mock Data
-const USER: User = {
-  id: '1',
-  name: 'Oscar & Max',
-  email: 'oscar@example.com',
-  pets: [
-    { id: '1', name: 'Max', type: 'Dog', breed: 'Golden Retriever' },
-    { id: '2', name: 'Bella', type: 'Cat', breed: 'Siamese' },
-  ]
-};
+// Mock pets (until we store pets server-side)
+const PETS = [
+  { id: '1', name: 'Max', type: 'Dog', breed: 'Golden Retriever' },
+  { id: '2', name: 'Bella', type: 'Cat', breed: 'Siamese' },
+];
 
 const MENU_ITEMS = [
   { id: '1', label: 'Account Settings', icon: 'user-o' as const },
@@ -28,10 +22,29 @@ const MENU_ITEMS = [
 ];
 
 export default function ProfileScreen() {
+  const { signOut } = useClerk();
+  const { user } = useUser();
+
+  const displayName =
+    user?.fullName ??
+    user?.firstName ??
+    user?.primaryEmailAddress?.emailAddress ??
+    'Account';
+
+  const email = user?.primaryEmailAddress?.emailAddress ?? '';
+  const avatarUrl = user?.imageUrl;
+
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Logout', style: 'destructive', onPress: () => router.replace('/auth/login') },
+      {
+        text: 'Logout',
+        style: 'destructive',
+        onPress: async () => {
+          await signOut();
+          router.replace('/auth/login');
+        },
+      },
     ]);
   };
 
@@ -51,11 +64,15 @@ export default function ProfileScreen() {
       <PageHeader>
         <View style={styles.headerProfile}>
           <Image 
-            source={{ uri: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-1.2.1&auto=format&fit=crop&w=200&q=80' }} 
+            source={{
+              uri:
+                avatarUrl ??
+                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?ixlib=rb-1.2.1&auto=format&fit=crop&w=200&q=80',
+            }} 
             style={styles.avatar} 
           />
-          <Text style={styles.name}>{USER.name}</Text>
-          <Text style={styles.email}>{USER.email}</Text>
+          <Text style={styles.name}>{displayName}</Text>
+          {!!email && <Text style={styles.email}>{email}</Text>}
           <TouchableOpacity style={styles.editButton}>
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
@@ -73,7 +90,7 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.petsScroll}>
-            {USER.pets.map(pet => (
+            {PETS.map(pet => (
               <Card key={pet.id} style={styles.petCard} padding="sm">
                 <View style={styles.petIconPlaceholder}>
                   <MaterialCommunityIcons 
