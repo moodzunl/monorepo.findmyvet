@@ -2,6 +2,7 @@
 Application configuration using Pydantic Settings.
 """
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -15,12 +16,38 @@ class Settings(BaseSettings):
     
     # Database
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/findmyvet"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_database_url(cls, v: str) -> str:
+        """
+        Ensure we use the async driver by default.
+
+        If a user sets DATABASE_URL like `postgresql://...`, SQLAlchemy will try to use
+        the psycopg2 dialect, which requires `psycopg2`. Our backend is async and uses
+        `asyncpg`, so we rewrite it to `postgresql+asyncpg://...`.
+        """
+        if not isinstance(v, str):
+            return v
+        value = v.strip()
+        if value.startswith("postgres://"):
+            # Common alias -> normalize to postgresql
+            value = "postgresql://" + value[len("postgres://") :]
+        if value.startswith("postgresql://") and "+asyncpg" not in value:
+            return "postgresql+asyncpg://" + value[len("postgresql://") :]
+        return value
     
     # Auth
     secret_key: str = "your-secret-key-change-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+
+    # Clerk Auth (JWT verification via JWKS)
+    # Use these if you want your backend to accept Clerk-issued JWTs (recommended for the mobile app).
+    clerk_jwks_url: str | None = None
+    clerk_issuer: str | None = None
+    clerk_audience: str | None = None
     
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

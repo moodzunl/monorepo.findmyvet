@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import auth, clinics, availability, appointments, reviews, emergency, billing
+from app.routers import auth, clinics, availability, appointments, reviews, emergency, billing, pets
 
 settings = get_settings()
 
@@ -45,6 +45,7 @@ app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(clinics.router, prefix="/api/v1/clinics", tags=["Clinics"])
 app.include_router(availability.router, prefix="/api/v1/availability", tags=["Availability"])
 app.include_router(appointments.router, prefix="/api/v1/appointments", tags=["Appointments"])
+app.include_router(pets.router, prefix="/api/v1/pets", tags=["Pets"])
 app.include_router(reviews.router, prefix="/api/v1/reviews", tags=["Reviews"])
 app.include_router(emergency.router, prefix="/api/v1/emergency", tags=["Emergency"])
 app.include_router(billing.router, prefix="/api/v1/billing", tags=["Billing & Monetization"])

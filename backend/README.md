@@ -53,6 +53,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+> Note: SQLAlchemy (including async usage) requires `greenlet`. It’s included in `requirements.txt`.
+
 ### 3. Set up environment
 
 Create a `.env` file:
@@ -61,6 +63,13 @@ Create a `.env` file:
 DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/findmyvet
 SECRET_KEY=your-secret-key-change-in-production
 DEBUG=true
+
+# Clerk (recommended for the mobile app)
+# Point this to your Clerk instance JWKS endpoint (public keys used to verify JWTs)
+CLERK_JWKS_URL=https://<your-clerk-domain>/.well-known/jwks.json
+# Optional but recommended: validate the token issuer and audience
+CLERK_ISSUER=https://<your-clerk-domain>
+CLERK_AUDIENCE=<your-jwt-template-audience-or-name>
 ```
 
 ### 4. Set up database
@@ -175,7 +184,8 @@ uvicorn app.main:app --reload --port 8000
 
 ## Authentication
 
-The API uses JWT Bearer tokens. Include the token in the Authorization header:
+The API uses JWT Bearer tokens. For the mobile app we recommend using **Clerk-issued JWTs**.
+Include the token in the Authorization header:
 
 ```
 Authorization: Bearer <access_token>

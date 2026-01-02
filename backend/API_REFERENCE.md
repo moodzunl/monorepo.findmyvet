@@ -19,7 +19,9 @@ http://localhost:8000/api/v1
 
 ## Authentication
 
-All authenticated endpoints require a Bearer token:
+All authenticated endpoints require a Bearer token.
+
+For the mobile app, use a **Clerk JWT** (from `useAuth().getToken()` in the Expo app):
 
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -107,16 +109,12 @@ Register a new user account.
 **Response (200):**
 ```json
 {
-    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "clerk_user_id": "user_2abc...",
+    "internal_user_id": "550e8400-e29b-41d4-a716-446655440000",
     "email": "john.doe@example.com",
-    "first_name": "John",
-    "last_name": "Doe",
-    "phone": "+1-555-123-4567",
-    "avatar_url": "https://cdn.findmyvet.com/avatars/550e8400.jpg",
-    "email_verified": true,
-    "phone_verified": false,
-    "timezone": "America/New_York",
-    "created_at": "2024-01-15T10:30:00Z"
+    "session_id": "sess_...",
+    "org_id": null,
+    "claims": { "...": "..." }
 }
 ```
 
@@ -251,6 +249,14 @@ Get full clinic details by URL slug.
     "is_open_now": true
 }
 ```
+
+### GET /clinics/{clinic_id}
+
+Get clinic details by internal UUID (recommended for the app).
+
+### GET /clinics/slug/{slug}
+
+Get clinic details by slug (explicit path to avoid route ambiguity).
 
 ---
 
@@ -414,6 +420,29 @@ Book a new appointment.
 **Response (200):** Updated appointment object with status "cancelled_by_owner".
 
 ---
+
+## 5. Pets Endpoints
+
+All pets endpoints require Clerk auth.
+
+### GET /pets
+
+List the current user's pets.
+
+### POST /pets
+
+Create a pet profile for the current user.
+
+**Request:**
+```json
+{
+  "name": "Buddy",
+  "species_name": "Dog",
+  "breed_name": "Golden Retriever",
+  "sex": "male",
+  "notes": "Allergies: Chicken • Traits: Friendly, Playful"
+}
+```
 
 ## 5. Review Endpoints
 

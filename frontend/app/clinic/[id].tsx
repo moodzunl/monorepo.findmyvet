@@ -1,31 +1,50 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet, ScrollView, SafeAreaView } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, Image, StyleSheet, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-
-// Mock Data (in real app, fetch from API)
-const CLINIC_DETAILS = {
-  id: '1',
-  name: 'City Vet Clinic',
-  address: '123 Main St, New York, NY 10001',
-  rating: 4.8,
-  reviewCount: 124,
-  image: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-  description: 'City Vet Clinic provides top-notch veterinary care for your pets. Our team of experienced veterinarians is dedicated to ensuring the health and well-being of your furry friends.',
-  services: ['Checkups', 'Vaccinations', 'Surgery', 'Dental Care'],
-  hours: 'Mon-Fri: 8am - 6pm',
-  isEmergency: true,
-};
+import { apiFetch } from '../../lib/api';
+import type { ClinicDetailResponse } from '../../types/api';
 
 export default function ClinicDetailsScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  
-  // In a real app, useQuery(id) here
-  const clinic = CLINIC_DETAILS;
+  const clinicId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
+
+  const [clinic, setClinic] = useState<ClinicDetailResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiFetch<ClinicDetailResponse>(`/api/v1/clinics/${clinicId}`);
+        if (mounted) setClinic(res);
+      } catch (e: any) {
+        if (mounted) setError(e?.message || 'Failed to load clinic');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [clinicId]);
+
+  const heroImage = clinic?.logo_url
+    ? clinic.logo_url
+    : 'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?auto=format&fit=crop&w=1400&q=80';
+
+  const address = clinic
+    ? `${clinic.address_line1}${clinic.address_line2 ? `, ${clinic.address_line2}` : ''}, ${clinic.city}, ${clinic.state} ${clinic.postal_code}`
+    : '';
+
+  const primaryService = clinic?.services?.[0];
 
   return (
     <>
@@ -36,16 +55,26 @@ export default function ClinicDetailsScreen() {
       }} />
       
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading clinic…</Text>
+          </View>
+        ) : error || !clinic ? (
+          <View style={styles.loadingWrap}>
+            <Text style={styles.errorText}>{error || 'Clinic not found'}</Text>
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
           {/* Hero Image */}
           <View style={styles.imageContainer}>
-            <Image source={{ uri: clinic.image }} style={styles.image} />
+            <Image source={{ uri: heroImage }} style={styles.image} />
             <View style={styles.overlay} />
             <View style={styles.headerContent}>
               <Text style={styles.name}>{clinic.name}</Text>
               <View style={styles.badges}>
-                <Badge label="Open Now" variant="success" style={{ marginRight: SPACING.sm }} />
-                {clinic.isEmergency && <Badge label="24/7 Emergency" variant="error" />}
+                <Badge label={clinic.is_open_now ? "Open Now" : "Closed"} variant={clinic.is_open_now ? "success" : "neutral"} style={{ marginRight: SPACING.sm }} />
+                {clinic.accepts_emergency && <Badge label="24/7 Emergency" variant="error" />}
               </View>
             </View>
           </View>
@@ -57,13 +86,13 @@ export default function ClinicDetailsScreen() {
             <View style={styles.statsRow}>
               <View style={styles.stat}>
                 <FontAwesome name="star" size={20} color="#FBBF24" />
-                <Text style={styles.statValue}>{clinic.rating}</Text>
-                <Text style={styles.statLabel}>{clinic.reviewCount} Reviews</Text>
+                <Text style={styles.statValue}>{(clinic.rating_average ?? 0).toFixed(1)}</Text>
+                <Text style={styles.statLabel}>{clinic.review_count} Reviews</Text>
               </View>
               <View style={styles.divider} />
               <View style={styles.stat}>
                 <FontAwesome name="map-marker" size={20} color={COLORS.primary} />
-                <Text style={styles.statValue}>1.2 mi</Text>
+                <Text style={styles.statValue}>—</Text>
                 <Text style={styles.statLabel}>Distance</Text>
               </View>
             </View>
@@ -71,23 +100,23 @@ export default function ClinicDetailsScreen() {
             {/* Address */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Location</Text>
-              <Text style={styles.text}>{clinic.address}</Text>
-              <Text style={styles.subText}>{clinic.hours}</Text>
+              <Text style={styles.text}>{address}</Text>
+              <Text style={styles.subText}>{clinic.timezone}</Text>
             </View>
 
             {/* About */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>About</Text>
-              <Text style={styles.text}>{clinic.description}</Text>
+              <Text style={styles.text}>{clinic.description || '—'}</Text>
             </View>
 
             {/* Services */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Services</Text>
               <View style={styles.servicesGrid}>
-                {clinic.services.map((service, index) => (
-                  <View key={index} style={styles.serviceTag}>
-                    <Text style={styles.serviceText}>{service}</Text>
+                {clinic.services.map((service) => (
+                  <View key={service.id} style={styles.serviceTag}>
+                    <Text style={styles.serviceText}>{service.name}</Text>
                   </View>
                 ))}
               </View>
@@ -101,17 +130,28 @@ export default function ClinicDetailsScreen() {
           <View style={styles.footerContent}>
             <View>
               <Text style={styles.priceLabel}>Consultation</Text>
-              <Text style={styles.price}>$50</Text>
+              <Text style={styles.price}>
+                {primaryService?.price_cents ? `$${(primaryService.price_cents / 100).toFixed(0)}` : '—'}
+              </Text>
             </View>
             <Button 
               title="Book Appointment" 
-              onPress={() => router.push('/booking')} 
+              onPress={() =>
+                router.push({
+                  pathname: '/booking',
+                  params: {
+                    clinicId: clinic.id,
+                    serviceId: primaryService?.id?.toString() || '',
+                  },
+                })
+              } 
               size="lg"
               style={{ width: 200 }}
             />
           </View>
         </SafeAreaView>
       </View>
+        )}
     </>
   );
 }
@@ -120,6 +160,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+  },
+  loadingText: {
+    marginTop: SPACING.sm,
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+  },
+  errorText: {
+    fontSize: FONT_SIZE.md,
+    color: '#EF4444',
+    textAlign: 'center',
   },
   imageContainer: {
     height: 300,

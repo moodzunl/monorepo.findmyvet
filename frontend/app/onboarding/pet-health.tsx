@@ -1,11 +1,13 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, Dimensions, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { router } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, Dimensions, Keyboard, TouchableWithoutFeedback, Alert } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { StatusBar } from 'expo-status-bar';
+import { apiFetch } from '../../lib/api';
+import { useAuth } from '@clerk/clerk-expo';
 
 const { width, height } = Dimensions.get('window');
 
@@ -14,8 +16,32 @@ const THEME_COLOR = '#0284C7'; // Blue for Step 3
 const THEME_LIGHT = '#E0F2FE';
 
 export default function PetHealthScreen() {
+  const { getToken } = useAuth();
+  const params = useLocalSearchParams();
+  const petName = typeof params.petName === 'string' ? params.petName : Array.isArray(params.petName) ? params.petName[0] : '';
+  const speciesKey = typeof params.speciesKey === 'string' ? params.speciesKey : Array.isArray(params.speciesKey) ? params.speciesKey[0] : '';
+  const breed = typeof params.breed === 'string' ? params.breed : Array.isArray(params.breed) ? params.breed[0] : '';
+  const size = typeof params.size === 'string' ? params.size : Array.isArray(params.size) ? params.size[0] : '';
+  const gender = typeof params.gender === 'string' ? params.gender : Array.isArray(params.gender) ? params.gender[0] : '';
+
   const [allergies, setAllergies] = useState('');
   const [selectedTraits, setSelectedTraits] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const speciesName = useMemo(() => {
+    switch (speciesKey) {
+      case 'dog':
+        return 'Dog';
+      case 'cat':
+        return 'Cat';
+      case 'bird':
+        return 'Bird';
+      case 'rabbit':
+        return 'Rabbit';
+      default:
+        return 'Other';
+    }
+  }, [speciesKey]);
 
   const toggleTrait = (trait: string) => {
     if (selectedTraits.includes(trait)) {
@@ -24,6 +50,38 @@ export default function PetHealthScreen() {
       setSelectedTraits([...selectedTraits, trait]);
     }
     Keyboard.dismiss(); // Dismiss keyboard when selecting traits
+  };
+
+  const handleFinish = async () => {
+    try {
+      setSubmitting(true);
+      const notesParts = [
+        breed ? `Breed: ${breed}` : null,
+        size ? `Size: ${size}` : null,
+        gender ? `Gender: ${gender}` : null,
+        allergies ? `Allergies: ${allergies}` : null,
+        selectedTraits.length ? `Traits: ${selectedTraits.join(', ')}` : null,
+      ].filter(Boolean) as string[];
+
+      await apiFetch('/api/v1/pets', {
+        method: 'POST',
+        getToken,
+        tokenTemplate: 'backend',
+        body: JSON.stringify({
+          name: petName,
+          species_name: speciesName,
+          breed_name: breed || null,
+          sex: gender ? (gender.toLowerCase() === 'male' ? 'male' : 'female') : null,
+          notes: notesParts.join(' • ') || null,
+        }),
+      });
+
+      router.push('/onboarding/complete');
+    } catch (e: any) {
+      Alert.alert('Could not save pet', e?.message || 'Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -91,9 +149,11 @@ export default function PetHealthScreen() {
               <View style={styles.footer}>
                 <Button 
                   title="Finish Profile" 
-                  onPress={() => router.push('/onboarding/complete')} 
+                  onPress={handleFinish} 
                   size="lg"
                   style={[styles.nextButton, { backgroundColor: THEME_COLOR }]}
+                  loading={submitting}
+                  disabled={submitting || !petName}
                 />
               </View>
             </View>

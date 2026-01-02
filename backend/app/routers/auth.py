@@ -26,8 +26,12 @@ from app.schemas.auth import (
     UserResponse,
     AuthResponse,
     MessageResponse,
+    ClerkMeResponse,
 )
 from app.schemas.users import UserProfileUpdate
+from app.security.clerk import require_clerk_auth
+from app.security.current_user import get_current_user as get_current_user_db
+from app.models.user import User
 
 router = APIRouter()
 
@@ -276,26 +280,33 @@ async def verify_magic_link(token: str):
 
 @router.get(
     "/me",
-    response_model=UserResponse,
+    response_model=ClerkMeResponse,
     summary="Get current user",
     responses={
         200: {"description": "Current user profile"},
         401: {"description": "Not authenticated"},
     }
 )
-async def get_current_user():
+async def get_current_user(
+    claims: Annotated[dict, Depends(require_clerk_auth)],
+    user: Annotated[User, Depends(get_current_user_db)],
+):
     """
-    Get the authenticated user's profile.
-    
-    Requires valid access token in Authorization header:
-    ```
-    Authorization: Bearer <access_token>
-    ```
+    Verify the caller using a Clerk JWT and return the decoded identity.
+
+    Requires Authorization header:
+    - `Authorization: Bearer <token>`
+
+    In the Expo app, fetch a token via `useAuth().getToken()` (optionally with a JWT template).
     """
-    # TODO: Implement get current user
-    # 1. Extract user from JWT token
-    # 2. Return user profile
-    raise HTTPException(status_code=501, detail="Not implemented")
+    return ClerkMeResponse(
+        clerk_user_id=str(claims.get("sub")),
+        internal_user_id=user.id,
+        email=user.email,
+        session_id=claims.get("sid"),
+        org_id=claims.get("org_id"),
+        claims=claims,
+    )
 
 
 @router.patch(

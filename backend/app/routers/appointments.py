@@ -9,11 +9,11 @@ PATCH  /api/v1/appointments/{id}/reschedule    - Reschedule appointment
 POST   /api/v1/appointments/{id}/cancel        - Cancel appointment
 GET    /api/v1/appointments/{id}/calendar.ics  - Download calendar invite
 """
-from fastapi import APIRouter, HTTPException, Query, Path, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
 from fastapi.responses import Response
 from typing import Optional
 from uuid import UUID
-from datetime import date
+from datetime import date, datetime, timezone
 
 from app.schemas.appointments import (
     AppointmentCreateRequest,
@@ -23,9 +23,113 @@ from app.schemas.appointments import (
     AppointmentListResponse,
     AppointmentConfirmationResponse,
     AppointmentStatus,
+    ClinicSummary,
+    PetSummary,
 )
+from app.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import text
+from app.security.current_user import get_current_user
+from app.models.user import User
 
 router = APIRouter()
+
+async def _load_appointment_response(db: AsyncSession, appointment_id: UUID) -> AppointmentResponse:
+    row = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                  a.id,
+                  a.confirmation_code,
+                  a.appointment_type,
+                  a.scheduled_date,
+                  a.scheduled_start,
+                  a.scheduled_end,
+                  a.status,
+                  a.is_emergency,
+                  a.owner_notes,
+                  a.home_address_line1,
+                  a.home_address_line2,
+                  a.home_city,
+                  a.home_state,
+                  a.home_postal_code,
+                  a.home_access_notes,
+                  a.created_at,
+                  a.updated_at,
+                  a.cancelled_at,
+                  a.cancellation_reason,
+                  c.id AS clinic_id,
+                  c.name AS clinic_name,
+                  c.phone AS clinic_phone,
+                  c.address_line1 AS clinic_address_line1,
+                  c.city AS clinic_city,
+                  c.state AS clinic_state,
+                  c.postal_code AS clinic_postal_code,
+                  p.id AS pet_id,
+                  p.name AS pet_name,
+                  sp.name AS species_name,
+                  br.name AS breed_name,
+                  s.name AS service_name,
+                  CASE WHEN a.vet_id IS NULL THEN NULL ELSE ('Dr. ' || COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')) END AS vet_name
+                FROM appointments a
+                JOIN clinics c ON c.id = a.clinic_id
+                JOIN pets p ON p.id = a.pet_id
+                JOIN species sp ON sp.id = p.species_id
+                LEFT JOIN breeds br ON br.id = p.breed_id
+                JOIN services s ON s.id = a.service_id
+                LEFT JOIN vets v ON v.id = a.vet_id
+                LEFT JOIN users u ON u.id = v.user_id
+                WHERE a.id = :appointment_id
+                """
+            ),
+            {"appointment_id": str(appointment_id)},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
+    clinic = ClinicSummary(
+        id=UUID(str(row["clinic_id"])),
+        name=row["clinic_name"],
+        phone=row["clinic_phone"],
+        address_line1=row["clinic_address_line1"],
+        city=row["clinic_city"],
+        state=row["clinic_state"],
+        postal_code=row["clinic_postal_code"],
+    )
+    pet = PetSummary(
+        id=UUID(str(row["pet_id"])),
+        name=row["pet_name"],
+        species_name=row["species_name"],
+        breed_name=row["breed_name"],
+    )
+
+    return AppointmentResponse(
+        id=UUID(str(row["id"])),
+        confirmation_code=row["confirmation_code"],
+        clinic=clinic,
+        pet=pet,
+        vet_name=(row["vet_name"].strip() if isinstance(row["vet_name"], str) else None),
+        service_name=row["service_name"],
+        appointment_type=row["appointment_type"],
+        scheduled_date=row["scheduled_date"],
+        scheduled_start=row["scheduled_start"],
+        scheduled_end=row["scheduled_end"],
+        status=row["status"],
+        is_emergency=bool(row["is_emergency"]),
+        owner_notes=row["owner_notes"],
+        home_address_line1=row["home_address_line1"],
+        home_address_line2=row["home_address_line2"],
+        home_city=row["home_city"],
+        home_state=row["home_state"],
+        home_postal_code=row["home_postal_code"],
+        home_access_notes=row["home_access_notes"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        cancelled_at=row["cancelled_at"],
+        cancellation_reason=row["cancellation_reason"],
+    )
 
 
 # =============================================================================
@@ -45,7 +149,11 @@ router = APIRouter()
         409: {"description": "Slot is no longer available"},
     }
 )
-async def create_appointment(request: AppointmentCreateRequest):
+async def create_appointment(
+    request: AppointmentCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     """
     Book a new appointment.
     
@@ -117,9 +225,160 @@ async def create_appointment(request: AppointmentCreateRequest):
     5. Send confirmation email
     6. Return appointment details
     """
-    # TODO: Implement appointment booking
-    # Use database transaction with row-level locking to prevent double-booking
-    raise HTTPException(status_code=501, detail="Not implemented")
+    # Validate clinic exists
+    clinic_exists = (await db.execute(text("SELECT 1 FROM clinics WHERE id = :id"), {"id": str(request.clinic_id)})).first()
+    if not clinic_exists:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    # Validate pet belongs to current user
+    pet = (
+        await db.execute(
+            text("SELECT id FROM pets WHERE id = :pet_id AND owner_id = :owner_id"),
+            {"pet_id": str(request.pet_id), "owner_id": str(user.id)},
+        )
+    ).first()
+    if not pet:
+        raise HTTPException(status_code=404, detail="Pet not found")
+
+    # Validate service exists
+    service = (
+        await db.execute(
+            text("SELECT id, is_emergency FROM services WHERE id = :id AND is_active = TRUE"),
+            {"id": request.service_id},
+        )
+    ).mappings().first()
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    # Lock slot and verify availability
+    slot = (
+        await db.execute(
+            text(
+                """
+                SELECT id, clinic_id, vet_id, slot_date, start_time, end_time, slot_type, is_blocked, current_bookings, max_bookings, service_id
+                FROM availability_slots
+                WHERE id = :slot_id
+                FOR UPDATE
+                """
+            ),
+            {"slot_id": str(request.slot_id)},
+        )
+    ).mappings().first()
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if str(slot["clinic_id"]) != str(request.clinic_id):
+        raise HTTPException(status_code=400, detail="Slot does not belong to clinic")
+    if slot["is_blocked"] or slot["current_bookings"] >= slot["max_bookings"]:
+        raise HTTPException(status_code=409, detail="Slot is no longer available")
+    if slot["slot_type"] != request.appointment_type.value:
+        raise HTTPException(status_code=400, detail="Slot type does not match appointment type")
+    if slot["service_id"] is not None and int(slot["service_id"]) != int(request.service_id):
+        raise HTTPException(status_code=400, detail="Slot is not compatible with requested service")
+
+    # Generate confirmation code via DB function
+    code_row = (await db.execute(text("SELECT generate_confirmation_code() AS code"))).mappings().first()
+    confirmation_code = code_row["code"] if code_row else None
+    if not confirmation_code:
+        raise HTTPException(status_code=500, detail="Failed to generate confirmation code")
+
+    now = datetime.now(timezone.utc)
+
+    appt_row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO appointments (
+                  confirmation_code,
+                  clinic_id,
+                  slot_id,
+                  owner_id,
+                  pet_id,
+                  vet_id,
+                  service_id,
+                  appointment_type,
+                  scheduled_date,
+                  scheduled_start,
+                  scheduled_end,
+                  home_address_line1,
+                  home_address_line2,
+                  home_city,
+                  home_state,
+                  home_postal_code,
+                  home_access_notes,
+                  owner_notes,
+                  is_emergency,
+                  created_at,
+                  updated_at
+                ) VALUES (
+                  :confirmation_code,
+                  :clinic_id,
+                  :slot_id,
+                  :owner_id,
+                  :pet_id,
+                  :vet_id,
+                  :service_id,
+                  :appointment_type,
+                  :scheduled_date,
+                  :scheduled_start,
+                  :scheduled_end,
+                  :home_address_line1,
+                  :home_address_line2,
+                  :home_city,
+                  :home_state,
+                  :home_postal_code,
+                  :home_access_notes,
+                  :owner_notes,
+                  :is_emergency,
+                  :created_at,
+                  :updated_at
+                )
+                RETURNING id
+                """
+            ),
+            {
+                "confirmation_code": confirmation_code,
+                "clinic_id": str(request.clinic_id),
+                "slot_id": str(request.slot_id),
+                "owner_id": str(user.id),
+                "pet_id": str(request.pet_id),
+                "vet_id": str(slot["vet_id"]) if slot["vet_id"] is not None else None,
+                "service_id": request.service_id,
+                "appointment_type": request.appointment_type.value,
+                "scheduled_date": slot["slot_date"],
+                "scheduled_start": slot["start_time"],
+                "scheduled_end": slot["end_time"],
+                "home_address_line1": request.home_address_line1,
+                "home_address_line2": request.home_address_line2,
+                "home_city": request.home_city,
+                "home_state": request.home_state,
+                "home_postal_code": request.home_postal_code,
+                "home_access_notes": request.home_access_notes,
+                "owner_notes": request.owner_notes,
+                "is_emergency": bool(service["is_emergency"]),
+                "created_at": now,
+                "updated_at": now,
+            },
+        )
+    ).mappings().first()
+
+    if not appt_row:
+        raise HTTPException(status_code=500, detail="Failed to create appointment")
+
+    # Increment slot bookings counter
+    await db.execute(
+        text("UPDATE availability_slots SET current_bookings = current_bookings + 1 WHERE id = :slot_id"),
+        {"slot_id": str(request.slot_id)},
+    )
+    await db.commit()
+
+    appointment_id = UUID(str(appt_row["id"]))
+    appt = await _load_appointment_response(db, appointment_id)
+
+    return AppointmentConfirmationResponse(
+        appointment=appt,
+        message="Appointment booked successfully!",
+        add_to_calendar_url=f"/api/v1/appointments/{appointment_id}/calendar.ics",
+    )
 
 
 # =============================================================================
@@ -140,6 +399,8 @@ async def list_appointments(
     upcoming: bool = Query(True, description="Only show upcoming appointments"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=50, description="Items per page"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     List appointments for the authenticated user.
@@ -169,8 +430,47 @@ async def list_appointments(
     }
     ```
     """
-    # TODO: Implement list appointments
-    raise HTTPException(status_code=501, detail="Not implemented")
+    where = ["a.owner_id = :owner_id"]
+    params: dict[str, object] = {"owner_id": str(user.id)}
+
+    if status is not None:
+        where.append("a.status = :status")
+        params["status"] = status.value
+
+    if upcoming:
+        where.append("a.scheduled_date >= :today")
+        params["today"] = date.today()
+        where.append("a.status IN ('booked', 'rescheduled')")
+
+    # Total count
+    total_row = (
+        await db.execute(
+            text(f"SELECT COUNT(*)::int AS total FROM appointments a WHERE {' AND '.join(where)}"),
+            params,
+        )
+    ).mappings().first()
+    total = int(total_row["total"]) if total_row else 0
+
+    params["limit"] = page_size
+    params["offset"] = (page - 1) * page_size
+
+    rows = (
+        await db.execute(
+            text(
+                f"""
+                SELECT a.id
+                FROM appointments a
+                WHERE {' AND '.join(where)}
+                ORDER BY a.scheduled_date DESC, a.scheduled_start DESC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+
+    appts = [await _load_appointment_response(db, UUID(str(r["id"]))) for r in rows]
+    return AppointmentListResponse(appointments=appts, total=total, page=page, page_size=page_size)
 
 
 @router.get(
@@ -185,15 +485,26 @@ async def list_appointments(
     }
 )
 async def get_appointment(
-    appointment_id: UUID = Path(..., description="Appointment ID")
+    appointment_id: UUID = Path(..., description="Appointment ID"),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Get full details of a specific appointment.
     
     User must be the appointment owner or clinic staff.
     """
-    # TODO: Implement get appointment
-    raise HTTPException(status_code=501, detail="Not implemented")
+    owner = (
+        await db.execute(
+            text("SELECT owner_id FROM appointments WHERE id = :id"),
+            {"id": str(appointment_id)},
+        )
+    ).mappings().first()
+    if not owner:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if str(owner["owner_id"]) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not authorized to view this appointment")
+    return await _load_appointment_response(db, appointment_id)
 
 
 @router.get(
@@ -206,7 +517,8 @@ async def get_appointment(
     }
 )
 async def get_appointment_by_code(
-    confirmation_code: str = Path(..., description="Confirmation code", example="ABCD-1234")
+    confirmation_code: str = Path(..., description="Confirmation code", example="ABCD-1234"),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Get appointment details using the confirmation code.
@@ -214,8 +526,15 @@ async def get_appointment_by_code(
     Useful for looking up appointments without authentication
     (e.g., from confirmation email link).
     """
-    # TODO: Implement get appointment by code
-    raise HTTPException(status_code=501, detail="Not implemented")
+    row = (
+        await db.execute(
+            text("SELECT id FROM appointments WHERE confirmation_code = :code"),
+            {"code": confirmation_code},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    return await _load_appointment_response(db, UUID(str(row["id"])))
 
 
 # =============================================================================
@@ -238,6 +557,8 @@ async def get_appointment_by_code(
 async def reschedule_appointment(
     appointment_id: UUID,
     request: AppointmentRescheduleRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Reschedule an existing appointment to a new time slot.
@@ -263,8 +584,94 @@ async def reschedule_appointment(
     5. Update appointment status to "rescheduled"
     6. Send reschedule notification email
     """
-    # TODO: Implement reschedule
-    raise HTTPException(status_code=501, detail="Not implemented")
+    now = datetime.now(timezone.utc)
+
+    appt = (
+        await db.execute(
+            text(
+                """
+                SELECT id, owner_id, clinic_id, slot_id, service_id, status
+                FROM appointments
+                WHERE id = :id
+                FOR UPDATE
+                """
+            ),
+            {"id": str(appointment_id)},
+        )
+    ).mappings().first()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if str(appt["owner_id"]) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if appt["status"] not in ("booked", "rescheduled"):
+        raise HTTPException(status_code=400, detail="Appointment cannot be rescheduled")
+
+    new_slot = (
+        await db.execute(
+            text(
+                """
+                SELECT id, clinic_id, vet_id, slot_date, start_time, end_time, slot_type, is_blocked, current_bookings, max_bookings, service_id
+                FROM availability_slots
+                WHERE id = :slot_id
+                FOR UPDATE
+                """
+            ),
+            {"slot_id": str(request.new_slot_id)},
+        )
+    ).mappings().first()
+    if not new_slot:
+        raise HTTPException(status_code=404, detail="New slot not found")
+    if str(new_slot["clinic_id"]) != str(appt["clinic_id"]):
+        raise HTTPException(status_code=400, detail="New slot must be at the same clinic")
+    if new_slot["is_blocked"] or new_slot["current_bookings"] >= new_slot["max_bookings"]:
+        raise HTTPException(status_code=409, detail="New slot is no longer available")
+    if new_slot["service_id"] is not None and int(new_slot["service_id"]) != int(appt["service_id"]):
+        raise HTTPException(status_code=400, detail="New slot is not compatible with appointment service")
+
+    # Release old slot counter if present
+    if appt["slot_id"] is not None:
+        await db.execute(
+            text(
+                "UPDATE availability_slots SET current_bookings = GREATEST(current_bookings - 1, 0) WHERE id = :slot_id"
+            ),
+            {"slot_id": str(appt["slot_id"])},
+        )
+
+    # Book new slot counter
+    await db.execute(
+        text("UPDATE availability_slots SET current_bookings = current_bookings + 1 WHERE id = :slot_id"),
+        {"slot_id": str(request.new_slot_id)},
+    )
+
+    # Update appointment schedule fields
+    await db.execute(
+        text(
+            """
+            UPDATE appointments
+            SET
+              slot_id = :slot_id,
+              vet_id = :vet_id,
+              scheduled_date = :scheduled_date,
+              scheduled_start = :scheduled_start,
+              scheduled_end = :scheduled_end,
+              status = 'rescheduled',
+              updated_at = :updated_at
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": str(appointment_id),
+            "slot_id": str(request.new_slot_id),
+            "vet_id": str(new_slot["vet_id"]) if new_slot["vet_id"] is not None else None,
+            "scheduled_date": new_slot["slot_date"],
+            "scheduled_start": new_slot["start_time"],
+            "scheduled_end": new_slot["end_time"],
+            "updated_at": now,
+        },
+    )
+
+    await db.commit()
+    return await _load_appointment_response(db, appointment_id)
 
 
 @router.post(
@@ -282,6 +689,8 @@ async def reschedule_appointment(
 async def cancel_appointment(
     appointment_id: UUID,
     request: AppointmentCancelRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     """
     Cancel an existing appointment.
@@ -306,8 +715,60 @@ async def cancel_appointment(
     5. Record cancellation reason and timestamp
     6. Send cancellation confirmation email
     """
-    # TODO: Implement cancel
-    raise HTTPException(status_code=501, detail="Not implemented")
+    now = datetime.now(timezone.utc)
+
+    appt = (
+        await db.execute(
+            text(
+                """
+                SELECT id, owner_id, slot_id, status
+                FROM appointments
+                WHERE id = :id
+                FOR UPDATE
+                """
+            ),
+            {"id": str(appointment_id)},
+        )
+    ).mappings().first()
+    if not appt:
+        raise HTTPException(status_code=404, detail="Appointment not found")
+    if str(appt["owner_id"]) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not authorized")
+    if appt["status"] not in ("booked", "rescheduled"):
+        raise HTTPException(status_code=400, detail="Appointment cannot be cancelled")
+
+    await db.execute(
+        text(
+            """
+            UPDATE appointments
+            SET
+              status = 'cancelled_by_owner',
+              cancelled_by = :cancelled_by,
+              cancellation_reason = :reason,
+              cancelled_at = :cancelled_at,
+              updated_at = :updated_at
+            WHERE id = :id
+            """
+        ),
+        {
+            "id": str(appointment_id),
+            "cancelled_by": str(user.id),
+            "reason": request.reason,
+            "cancelled_at": now,
+            "updated_at": now,
+        },
+    )
+
+    if appt["slot_id"] is not None:
+        await db.execute(
+            text(
+                "UPDATE availability_slots SET current_bookings = GREATEST(current_bookings - 1, 0) WHERE id = :slot_id"
+            ),
+            {"slot_id": str(appt["slot_id"])},
+        )
+
+    await db.commit()
+    return await _load_appointment_response(db, appointment_id)
 
 
 # =============================================================================

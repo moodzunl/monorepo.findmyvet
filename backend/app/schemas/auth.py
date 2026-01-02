@@ -2,7 +2,7 @@
 Authentication Schemas
 """
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 from uuid import UUID
 
@@ -158,4 +158,18 @@ class MessageResponse(BaseModel):
             }
         }
     }
+
+
+# =============================================================================
+# CLERK (JWT) RESPONSES
+# =============================================================================
+
+class ClerkMeResponse(BaseModel):
+    """Identity returned after verifying a Clerk JWT."""
+    clerk_user_id: str = Field(..., description="Clerk user id (token sub)")
+    internal_user_id: Optional[UUID] = Field(None, description="FindMyVet internal user id (UUID)")
+    email: Optional[EmailStr] = None
+    session_id: Optional[str] = Field(None, description="Clerk session id (token sid)")
+    org_id: Optional[str] = Field(None, description="Clerk org id if present (token org_id)")
+    claims: dict[str, Any] = Field(..., description="Full decoded JWT claims")
 

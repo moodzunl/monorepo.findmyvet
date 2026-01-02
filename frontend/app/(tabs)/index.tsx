@@ -1,41 +1,18 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { ClinicCard } from '../../components/ui/ClinicCard';
 import { Card } from '../../components/ui/Card';
-import { Clinic, Appointment } from '../../types';
+import { Appointment } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
 import { AppointmentCard } from '../../components/ui/AppointmentCard';
 import { useUser } from '@clerk/clerk-expo';
-
-// Mock Data
-const NEARBY_CLINICS: Clinic[] = [
-  {
-    id: '1',
-    name: 'City Vet Clinic',
-    address: '123 Main St, New York',
-    rating: 4.8,
-    reviewCount: 124,
-    image: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: true,
-    nextAvailable: 'Today, 2:00 PM',
-    isEmergency: true,
-  },
-  {
-    id: '2',
-    name: 'Paws & Claws Care',
-    address: '456 Park Ave, Brooklyn',
-    rating: 4.5,
-    reviewCount: 89,
-    image: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: true,
-    nextAvailable: 'Tomorrow, 10:00 AM',
-    isEmergency: false,
-  },
-];
+import { useAuth } from '@clerk/clerk-expo';
+import { apiFetch } from '../../lib/api';
+import type { ClinicSearchResponse, ClinicSummaryResponse } from '../../types/api';
 
 const CATEGORIES = [
   { id: '1', name: 'Veterinary', icon: 'stethoscope' as const, color: '#2E7D32', iconColor: '#2E7D32' },
@@ -44,25 +21,74 @@ const CATEGORIES = [
   { id: '4', name: 'Pharmacy', icon: 'medkit' as const, color: '#9C27B0', iconColor: '#9C27B0' },
 ];
 
-const RECENTLY_VIEWED = [
-  { id: '3', name: 'Happy Tails', image: 'https://images.unsplash.com/photo-1532938911079-1b06ac7ceec7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80', rating: 4.9 },
-  { id: '4', name: 'Downtown Vet', image: 'https://images.unsplash.com/photo-1599443015574-be5fe8a05783?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80', rating: 4.2 },
-  { id: '5', name: 'Pet Wellness', image: 'https://images.unsplash.com/photo-1516734212186-a967f81ad0d7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80', rating: 4.6 },
-];
-
-const UPCOMING_APPOINTMENT: Appointment = {
-  id: 'home-upcoming',
-  clinicName: 'City Vet Clinic',
-  date: '2023-10-12',
-  time: '10:00 AM',
-  petName: 'Max',
-  status: 'upcoming',
-  type: 'Vaccination',
-};
+const RECENTLY_VIEWED: Array<{ id: string; name: string; image: string; rating: number }> = [];
 
 export default function HomeScreen() {
   const { user } = useUser();
+  const { getToken } = useAuth();
   const greetingName = user?.firstName ?? user?.fullName ?? 'there';
+  const [clinics, setClinics] = useState<ClinicSummaryResponse[]>([]);
+  const [loadingClinics, setLoadingClinics] = useState(true);
+  const [clinicsError, setClinicsError] = useState<string | null>(null);
+  const [upcoming, setUpcoming] = useState<Appointment | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingClinics(true);
+        setClinicsError(null);
+        // NOTE: Until we add real location, default to SF coordinates.
+        const res = await apiFetch<ClinicSearchResponse>('/api/v1/clinics/search', {
+          method: 'POST',
+          body: JSON.stringify({
+            latitude: 37.7749,
+            longitude: -122.4194,
+            radius_km: 50,
+            page: 1,
+            page_size: 10,
+          }),
+        });
+        if (mounted) setClinics(res.clinics);
+      } catch (e: any) {
+        if (mounted) setClinicsError(e?.message || 'Failed to load clinics');
+      } finally {
+        if (mounted) setLoadingClinics(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await apiFetch<any>('/api/v1/appointments?upcoming=true&page=1&page_size=1', {
+          method: 'GET',
+          getToken,
+          tokenTemplate: 'backend',
+        });
+        const a = res?.appointments?.[0];
+        if (!a || !mounted) return;
+        setUpcoming({
+          id: String(a.id),
+          clinicName: a?.clinic?.name || 'Clinic',
+          date: String(a.scheduled_date),
+          time: String(a.scheduled_start || '').slice(0, 5),
+          petName: a?.pet?.name || 'Pet',
+          status: 'upcoming',
+          type: 'Checkup',
+        });
+      } catch {
+        // ignore on home
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [getToken]);
 
   return (
     <View style={styles.container}>
@@ -101,10 +127,12 @@ export default function HomeScreen() {
         </View>
 
         {/* Upcoming Appointment */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Upcoming</Text>
-          <AppointmentCard appointment={UPCOMING_APPOINTMENT} />
-        </View>
+        {upcoming && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Upcoming</Text>
+            <AppointmentCard appointment={upcoming} />
+          </View>
+        )}
 
         {/* Recently Viewed */}
         <View style={[styles.section, { marginBottom: SPACING.sm }]}>
@@ -133,11 +161,22 @@ export default function HomeScreen() {
             <Text style={[styles.sectionTitle, styles.nearbyTitle]}>Nearby Clinics</Text>
             <Text style={styles.seeAll}>See All</Text>
           </View>
-          {NEARBY_CLINICS.map((clinic) => (
-            <View key={clinic.id} style={styles.nearbyCardWrap}>
-              <ClinicCard clinic={clinic} />
+          {loadingClinics ? (
+            <View style={styles.loadingRow}>
+              <ActivityIndicator color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading clinics…</Text>
             </View>
-          ))}
+          ) : clinicsError ? (
+            <Text style={styles.errorText}>{clinicsError}</Text>
+          ) : clinics.length === 0 ? (
+            <Text style={styles.emptyText}>No clinics found yet.</Text>
+          ) : (
+            clinics.map((clinic) => (
+              <View key={clinic.id} style={styles.nearbyCardWrap}>
+                <ClinicCard clinic={clinic} />
+              </View>
+            ))
+          )}
         </View>
 
       </ScrollView>
@@ -262,5 +301,25 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.xs,
     color: COLORS.textLight,
     marginLeft: 4,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+  },
+  loadingText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+  },
+  errorText: {
+    fontSize: FONT_SIZE.sm,
+    color: '#EF4444',
+    paddingVertical: SPACING.md,
+  },
+  emptyText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+    paddingVertical: SPACING.md,
   },
 });

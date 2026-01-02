@@ -5,36 +5,43 @@ import { FontAwesome } from '@expo/vector-icons';
 import { Card } from './Card';
 import { Badge } from './Badge';
 import { COLORS, FONT_SIZE, SPACING, RADIUS } from '../../constants/theme';
-import { Clinic } from '../../types';
+import type { ClinicSummaryResponse } from '../../types/api';
 
 interface ClinicCardProps {
-  clinic: Clinic;
+  clinic: ClinicSummaryResponse;
 }
 
 export const ClinicCard: React.FC<ClinicCardProps> = ({ clinic }) => {
+  const address = `${clinic.address_line1}, ${clinic.city}`;
+  const imageUri =
+    clinic.logo_url ||
+    'https://images.unsplash.com/photo-1583337130417-3346a1be7dee?auto=format&fit=crop&w=1200&q=80';
+
   return (
     <Link href={`/clinic/${clinic.id}`} asChild>
       <TouchableOpacity activeOpacity={0.9}>
         <Card padding="none" style={styles.card}>
-          <Image source={{ uri: clinic.image }} style={styles.image} />
+          <Image source={{ uri: imageUri }} style={styles.image} />
           <View style={styles.content}>
             <View style={styles.header}>
               <Text style={styles.name} numberOfLines={1}>{clinic.name}</Text>
-              {clinic.isEmergency && <Badge label="24/7" variant="error" />}
+              {clinic.accepts_emergency && <Badge label="24/7" variant="error" />}
             </View>
             
             <Text style={styles.address} numberOfLines={1}>
-              <FontAwesome name="map-marker" size={12} color={COLORS.textLight} /> {clinic.address}
+              <FontAwesome name="map-marker" size={12} color={COLORS.textLight} /> {address}
             </Text>
 
             <View style={styles.footer}>
               <View style={styles.rating}>
                 <FontAwesome name="star" size={14} color="#FBBF24" />
-                <Text style={styles.ratingText}>{clinic.rating} ({clinic.reviewCount})</Text>
+                <Text style={styles.ratingText}>
+                  {(clinic.rating_average ?? 0).toFixed(1)} ({clinic.review_count})
+                </Text>
               </View>
               <Badge 
-                label={clinic.isOpen ? "Open Now" : "Closed"} 
-                variant={clinic.isOpen ? "success" : "neutral"} 
+                label={clinic.is_open_now ? "Open Now" : "Closed"} 
+                variant={clinic.is_open_now ? "success" : "neutral"} 
               />
             </View>
           </View>
