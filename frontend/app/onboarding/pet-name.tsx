@@ -23,7 +23,13 @@ export default function PetNameScreen() {
 
   const handleNext = () => {
     if (name && selectedType) {
-      router.push('/onboarding/pet-details');
+      router.push({
+        pathname: '/onboarding/pet-details',
+        params: {
+          petName: name,
+          speciesKey: selectedType,
+        },
+      });
     }
   };
 
