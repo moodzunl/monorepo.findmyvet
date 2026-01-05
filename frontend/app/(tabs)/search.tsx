@@ -1,80 +1,70 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, FlatList } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TextInput, ScrollView, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { ClinicCard } from '../../components/ui/ClinicCard';
-import { Clinic } from '../../types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
-
-// Mock Data (Extended)
-const ALL_CLINICS: Clinic[] = [
-  {
-    id: '1',
-    name: 'City Vet Clinic',
-    address: '123 Main St, New York',
-    rating: 4.8,
-    reviewCount: 124,
-    image: 'https://images.unsplash.com/photo-1584132967334-10e028bd69f7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: true,
-    nextAvailable: 'Today, 2:00 PM',
-    isEmergency: true,
-  },
-  {
-    id: '2',
-    name: 'Paws & Claws Care',
-    address: '456 Park Ave, Brooklyn',
-    rating: 4.5,
-    reviewCount: 89,
-    image: 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: true,
-    nextAvailable: 'Tomorrow, 10:00 AM',
-    isEmergency: false,
-  },
-  {
-    id: '3',
-    name: 'Happy Tails Veterinary',
-    address: '789 Broadway, New York',
-    rating: 4.9,
-    reviewCount: 210,
-    image: 'https://images.unsplash.com/photo-1532938911079-1b06ac7ceec7?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: false,
-    nextAvailable: 'Mon, 9:00 AM',
-    isEmergency: true,
-  },
-  {
-    id: '4',
-    name: 'Downtown Pet Hospital',
-    address: '101 5th Ave, New York',
-    rating: 4.2,
-    reviewCount: 56,
-    image: 'https://images.unsplash.com/photo-1599443015574-be5fe8a05783?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80',
-    isOpen: true,
-    nextAvailable: 'Today, 4:30 PM',
-    isEmergency: false,
-  },
-];
+import { apiFetch } from '../../lib/api';
+import type { ClinicSearchResponse, ClinicSummaryResponse } from '../../types/api';
 
 const FILTERS = ['All', 'Open Now', 'Emergency', 'Highest Rated'];
 
 export default function SearchScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('All');
+  const [clinics, setClinics] = useState<ClinicSummaryResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredClinics = ALL_CLINICS.filter(clinic => {
-    const matchesSearch = clinic.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          clinic.address.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (!matchesSearch) return false;
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiFetch<ClinicSearchResponse>('/api/v1/clinics/search', {
+          method: 'POST',
+          body: JSON.stringify({
+            latitude: 37.7749,
+            longitude: -122.4194,
+            radius_km: 100,
+            page: 1,
+            page_size: 50,
+          }),
+        });
+        if (mounted) setClinics(res.clinics);
+      } catch (e: any) {
+        if (mounted) setError(e?.message || 'Failed to load clinics');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
-    switch (activeFilter) {
-      case 'Open Now': return clinic.isOpen;
-      case 'Emergency': return clinic.isEmergency;
-      case 'Highest Rated': return clinic.rating >= 4.8;
-      default: return true;
-    }
-  });
+  const filteredClinics = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return clinics.filter((clinic) => {
+      const address = `${clinic.address_line1} ${clinic.city} ${clinic.state} ${clinic.postal_code}`.toLowerCase();
+      const matchesSearch = !q || clinic.name.toLowerCase().includes(q) || address.includes(q);
+      if (!matchesSearch) return false;
+
+      switch (activeFilter) {
+        case 'Open Now':
+          return clinic.is_open_now;
+        case 'Emergency':
+          return clinic.accepts_emergency;
+        case 'Highest Rated':
+          return (clinic.rating_average ?? 0) >= 4.8;
+        default:
+          return true;
+      }
+    });
+  }, [activeFilter, clinics, searchQuery]);
 
   return (
     <View style={styles.container}>
@@ -129,23 +119,36 @@ export default function SearchScreen() {
         </View>
 
         {/* Results */}
-        <FlatList
-          data={filteredClinics}
-          keyExtractor={item => item.id}
-          renderItem={({ item }) => (
-            <View style={styles.cardContainer}>
-              <ClinicCard clinic={item} />
-            </View>
-          )}
-          contentContainerStyle={styles.listContent}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <FontAwesome name="search" size={48} color={COLORS.border} />
-              <Text style={styles.emptyText}>No clinics found</Text>
-              <Text style={styles.emptySubtext}>Try adjusting your search or filters</Text>
-            </View>
-          }
-        />
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading clinics…</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.emptyState}>
+            <FontAwesome name="warning" size={48} color={COLORS.border} />
+            <Text style={styles.emptyText}>Couldn’t load clinics</Text>
+            <Text style={styles.emptySubtext}>{error}</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={filteredClinics}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.cardContainer}>
+                <ClinicCard clinic={item} />
+              </View>
+            )}
+            contentContainerStyle={styles.listContent}
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <FontAwesome name="search" size={48} color={COLORS.border} />
+                <Text style={styles.emptyText}>No clinics found</Text>
+                <Text style={styles.emptySubtext}>Try adjusting your search or filters</Text>
+              </View>
+            }
+          />
+        )}
       </View>
     </View>
   );
@@ -216,6 +219,17 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     marginBottom: SPACING.md,
+  },
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+    marginTop: SPACING.xl,
+  },
+  loadingText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+    marginTop: SPACING.sm,
   },
   emptyState: {
     alignItems: 'center',

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
@@ -14,37 +15,8 @@ import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
 import { MonthCalendar } from '../../components/ui/MonthCalendar';
 import { AppointmentCard } from '../../components/ui/AppointmentCard';
-
-// Mock Data
-const APPOINTMENTS: Appointment[] = [
-  {
-    id: '1',
-    clinicName: 'City Vet Clinic',
-    date: '2023-10-12',
-    time: '10:00 AM',
-    petName: 'Max',
-    status: 'upcoming',
-    type: 'Vaccination',
-  },
-  {
-    id: '2',
-    clinicName: 'Paws & Claws Care',
-    date: '2023-09-15',
-    time: '2:30 PM',
-    petName: 'Bella',
-    status: 'completed',
-    type: 'Checkup',
-  },
-  {
-    id: '3',
-    clinicName: 'Downtown Pet Hospital',
-    date: '2023-08-01',
-    time: '11:15 AM',
-    petName: 'Max',
-    status: 'cancelled',
-    type: 'Emergency',
-  },
-];
+import { apiFetch } from '../../lib/api';
+import { useAuth } from '@clerk/clerk-expo';
 
 function parseISO(dateStr: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
@@ -59,27 +31,76 @@ function parseISO(dateStr: string): Date | null {
 }
 
 export default function AppointmentsScreen() {
+  const { getToken } = useAuth();
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await apiFetch<any>('/api/v1/appointments?upcoming=false&page=1&page_size=50', {
+          method: 'GET',
+          getToken,
+          tokenTemplate: 'backend',
+        });
+
+        const mapped: Appointment[] = (res.appointments || []).map((a: any) => {
+          const statusRaw = String(a.status || '');
+          const status: Appointment['status'] =
+            statusRaw === 'completed'
+              ? 'completed'
+              : statusRaw.startsWith('cancelled')
+              ? 'cancelled'
+              : 'upcoming';
+
+          return {
+            id: String(a.id),
+            clinicName: a?.clinic?.name || 'Clinic',
+            date: String(a.scheduled_date),
+            time: String(a.scheduled_start || '').slice(0, 5),
+            petName: a?.pet?.name || 'Pet',
+            status,
+            type: 'Checkup',
+          };
+        });
+
+        if (mounted) setAppointments(mapped);
+      } catch (e: any) {
+        if (mounted) setError(e?.message || 'Failed to load appointments');
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [getToken]);
+
   const firstApptDate = useMemo(() => {
-    const parsed = APPOINTMENTS.map((a) => parseISO(a.date)).filter(
+    const parsed = appointments.map((a) => parseISO(a.date)).filter(
       Boolean
     ) as Date[];
     if (parsed.length === 0) return new Date();
     parsed.sort((a, b) => a.getTime() - b.getTime());
     return parsed[0];
-  }, []);
+  }, [appointments]);
 
   const [monthCursor, setMonthCursor] = useState<Date>(
     new Date(firstApptDate.getFullYear(), firstApptDate.getMonth(), 1)
   );
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
-  const markedDates = useMemo(() => APPOINTMENTS.map((a) => a.date), []);
+  const markedDates = useMemo(() => appointments.map((a) => a.date), [appointments]);
 
   const visibleAppointments = useMemo(() => {
-    const base = [...APPOINTMENTS].sort((a, b) => a.date.localeCompare(b.date));
+    const base = [...appointments].sort((a, b) => a.date.localeCompare(b.date));
     if (!selectedDate) return base;
     return base.filter((a) => a.date === selectedDate);
-  }, [selectedDate]);
+  }, [appointments, selectedDate]);
 
   return (
     <View style={styles.container}>
@@ -89,8 +110,20 @@ export default function AppointmentsScreen() {
         subtitle='Pick a date to filter your schedule'
       />
 
-      <FlatList
-        data={visibleAppointments}
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading appointments…</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.emptyState}>
+          <FontAwesome name='warning' size={48} color={COLORS.border} />
+          <Text style={styles.emptyText}>Couldn’t load appointments</Text>
+          <Text style={styles.emptySubtext}>{error}</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={visibleAppointments}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <AppointmentCard
@@ -141,7 +174,8 @@ export default function AppointmentsScreen() {
             </Text>
           </View>
         }
-      />
+        />
+      )}
     </View>
   );
 }
@@ -199,5 +233,16 @@ const styles = StyleSheet.create({
     fontSize: FONT_SIZE.sm,
     color: COLORS.textLight,
     marginTop: SPACING.xs,
+  },
+  loadingWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: SPACING.xl,
+    marginTop: SPACING.xl,
+  },
+  loadingText: {
+    fontSize: FONT_SIZE.sm,
+    color: COLORS.textLight,
+    marginTop: SPACING.sm,
   },
 });

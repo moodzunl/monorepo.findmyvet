@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, Dimensions, Keyboard, TouchableWithoutFeedback } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
@@ -13,6 +13,10 @@ const SIZES = ['Small', 'Medium', 'Large', 'Giant'];
 const GENDERS = ['Male', 'Female'];
 
 export default function PetDetailsScreen() {
+  const { petName, speciesKey } = useLocalSearchParams();
+  const nameParam = typeof petName === 'string' ? petName : Array.isArray(petName) ? petName[0] : '';
+  const speciesParam = typeof speciesKey === 'string' ? speciesKey : Array.isArray(speciesKey) ? speciesKey[0] : '';
+
   const [breed, setBreed] = useState('');
   const [size, setSize] = useState('');
   const [gender, setGender] = useState('');
@@ -103,7 +107,18 @@ export default function PetDetailsScreen() {
               <View style={styles.footer}>
                 <Button 
                   title="Next Step" 
-                  onPress={() => router.push('/onboarding/pet-health')} 
+                  onPress={() =>
+                    router.push({
+                      pathname: '/onboarding/pet-health',
+                      params: {
+                        petName: nameParam,
+                        speciesKey: speciesParam,
+                        breed,
+                        size,
+                        gender,
+                      },
+                    })
+                  } 
                   disabled={!breed || !size || !gender}
                   size="lg"
                   variant="secondary"

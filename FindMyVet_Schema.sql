@@ -28,11 +28,14 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Central user table for all roles (pet owner, vet, clinic admin)
 CREATE TABLE users (
     id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    -- External auth provider id (Clerk user id, e.g. "user_2abc..."). Keep internal UUIDs stable.
+    clerk_user_id        TEXT UNIQUE,
     email               VARCHAR(255) UNIQUE NOT NULL,
     phone               VARCHAR(20),
     password_hash       VARCHAR(255),  -- NULL if OAuth/magic link
-    first_name          VARCHAR(100) NOT NULL,
-    last_name           VARCHAR(100) NOT NULL,
+    -- Names may be missing depending on auth provider / user settings (e.g., social sign-in).
+    first_name          VARCHAR(100),
+    last_name           VARCHAR(100),
     avatar_url          TEXT,
     email_verified_at   TIMESTAMPTZ,
     phone_verified_at   TIMESTAMPTZ,
@@ -44,6 +47,7 @@ CREATE TABLE users (
 
 CREATE INDEX idx_users_email ON users(email);
 CREATE INDEX idx_users_phone ON users(phone) WHERE phone IS NOT NULL;
+CREATE INDEX idx_users_clerk_user_id ON users(clerk_user_id) WHERE clerk_user_id IS NOT NULL;
 CREATE INDEX idx_users_deleted ON users(deleted_at) WHERE deleted_at IS NULL;
 
 -- ============================================================================
