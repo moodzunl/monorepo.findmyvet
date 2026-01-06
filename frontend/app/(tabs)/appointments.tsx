@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -31,12 +31,23 @@ function parseISO(dateStr: string): Date | null {
 }
 
 export default function AppointmentsScreen() {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Avoid firing authenticated requests before Clerk is ready; otherwise we churn 401s and re-renders.
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setAppointments([]);
+      setLoading(false);
+      setError('Please sign in to view appointments.');
+      return;
+    }
+
     let mounted = true;
     (async () => {
       try {
@@ -44,7 +55,7 @@ export default function AppointmentsScreen() {
         setError(null);
         const res = await apiFetch<any>('/api/v1/appointments?upcoming=false&page=1&page_size=50', {
           method: 'GET',
-          getToken,
+          getToken: getTokenRef.current,
           tokenTemplate: 'backend',
         });
 
@@ -78,7 +89,7 @@ export default function AppointmentsScreen() {
     return () => {
       mounted = false;
     };
-  }, [getToken]);
+  }, [isLoaded, isSignedIn, userId]);
 
   const firstApptDate = useMemo(() => {
     const parsed = appointments.map((a) => parseISO(a.date)).filter(

@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     clerk_jwks_url: str | None = None
     clerk_issuer: str | None = None
     clerk_audience: str | None = None
+
+    # Dev safety valve:
+    # If True (or if DEBUG=true), allow an existing DB user row found by email to be re-linked
+    # to a new Clerk user id. This avoids 409 loops during local development when Clerk users
+    # get recreated/reset. Keep this False in production.
+    allow_clerk_email_relink: bool = False
     
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]

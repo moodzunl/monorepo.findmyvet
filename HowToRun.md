@@ -45,6 +45,9 @@ CLERK_AUDIENCE=findmyvet-api
 > - `"email": "{{user.primary_email_address}}"`
 >
 > (Email is required because our DB schema requires `users.email`.)
+>
+> Also: the Expo app requests `getToken({ template: "backend" })`, so create a JWT template named **`backend`**
+> with the claims above (and ideally `first_name`, `last_name`, `avatar_url` too).
 
 #### **Run the backend**
 
@@ -80,6 +83,13 @@ EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_...
 # - Android emulator: http://10.0.2.2:8000
 EXPO_PUBLIC_API_URL=http://localhost:8000
 ```
+
+#### **Enable Google login (Clerk)**
+
+- In your Clerk Dashboard, enable **Google** under **User & Authentication → Social Connections**.
+- Add an allowlisted redirect URL that matches the app scheme in `frontend/app.json`:
+  - This app uses **`findmyvet`**, so allow something like **`findmyvet://*`** (or the exact URL you see during the OAuth redirect).
+- Ensure your **Clerk JWT template** includes an email claim (see backend section above), otherwise `/api/v1/auth/me` will fail because `users.email` is required.
 
 #### **Run Expo**
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
@@ -25,7 +25,9 @@ const RECENTLY_VIEWED: Array<{ id: string; name: string; image: string; rating: 
 
 export default function HomeScreen() {
   const { user } = useUser();
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const greetingName = user?.firstName ?? user?.fullName ?? 'there';
   const [clinics, setClinics] = useState<ClinicSummaryResponse[]>([]);
   const [loadingClinics, setLoadingClinics] = useState(true);
@@ -62,12 +64,17 @@ export default function HomeScreen() {
   }, []);
 
   useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setUpcoming(null);
+      return;
+    }
     let mounted = true;
     (async () => {
       try {
         const res = await apiFetch<any>('/api/v1/appointments?upcoming=true&page=1&page_size=1', {
           method: 'GET',
-          getToken,
+          getToken: getTokenRef.current,
           tokenTemplate: 'backend',
         });
         const a = res?.appointments?.[0];
@@ -88,7 +95,7 @@ export default function HomeScreen() {
     return () => {
       mounted = false;
     };
-  }, [getToken]);
+  }, [isLoaded, isSignedIn, userId]);
 
   return (
     <View style={styles.container}>

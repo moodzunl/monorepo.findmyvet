@@ -65,93 +65,95 @@ export default function ClinicDetailsScreen() {
             <Text style={styles.errorText}>{error || 'Clinic not found'}</Text>
           </View>
         ) : (
-          <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
-          {/* Hero Image */}
-          <View style={styles.imageContainer}>
-            <Image source={{ uri: heroImage }} style={styles.image} />
-            <View style={styles.overlay} />
-            <View style={styles.headerContent}>
-              <Text style={styles.name}>{clinic.name}</Text>
-              <View style={styles.badges}>
-                <Badge label={clinic.is_open_now ? "Open Now" : "Closed"} variant={clinic.is_open_now ? "success" : "neutral"} style={{ marginRight: SPACING.sm }} />
-                {clinic.accepts_emergency && <Badge label="24/7 Emergency" variant="error" />}
-              </View>
-            </View>
-          </View>
-
-          {/* Content */}
-          <View style={styles.content}>
-            
-            {/* Quick Stats */}
-            <View style={styles.statsRow}>
-              <View style={styles.stat}>
-                <FontAwesome name="star" size={20} color="#FBBF24" />
-                <Text style={styles.statValue}>{(clinic.rating_average ?? 0).toFixed(1)}</Text>
-                <Text style={styles.statLabel}>{clinic.review_count} Reviews</Text>
-              </View>
-              <View style={styles.divider} />
-              <View style={styles.stat}>
-                <FontAwesome name="map-marker" size={20} color={COLORS.primary} />
-                <Text style={styles.statValue}>—</Text>
-                <Text style={styles.statLabel}>Distance</Text>
-              </View>
-            </View>
-
-            {/* Address */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Location</Text>
-              <Text style={styles.text}>{address}</Text>
-              <Text style={styles.subText}>{clinic.timezone}</Text>
-            </View>
-
-            {/* About */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>About</Text>
-              <Text style={styles.text}>{clinic.description || '—'}</Text>
-            </View>
-
-            {/* Services */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Services</Text>
-              <View style={styles.servicesGrid}>
-                {clinic.services.map((service) => (
-                  <View key={service.id} style={styles.serviceTag}>
-                    <Text style={styles.serviceText}>{service.name}</Text>
+          <>
+            <ScrollView contentContainerStyle={{ paddingBottom: 100 }}>
+              {/* Hero Image */}
+              <View style={styles.imageContainer}>
+                <Image source={{ uri: heroImage }} style={styles.image} />
+                <View style={styles.overlay} />
+                <View style={styles.headerContent}>
+                  <Text style={styles.name}>{clinic.name}</Text>
+                  <View style={styles.badges}>
+                    <Badge label={clinic.is_open_now ? "Open Now" : "Closed"} variant={clinic.is_open_now ? "success" : "neutral"} style={{ marginRight: SPACING.sm }} />
+                    {clinic.accepts_emergency && <Badge label="24/7 Emergency" variant="error" />}
                   </View>
-                ))}
+                </View>
               </View>
-            </View>
 
-          </View>
-        </ScrollView>
+              {/* Content */}
+              <View style={styles.content}>
+                
+                {/* Quick Stats */}
+                <View style={styles.statsRow}>
+                  <View style={styles.stat}>
+                    <FontAwesome name="star" size={20} color="#FBBF24" />
+                    <Text style={styles.statValue}>{(clinic.rating_average ?? 0).toFixed(1)}</Text>
+                    <Text style={styles.statLabel}>{clinic.review_count} Reviews</Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.stat}>
+                    <FontAwesome name="map-marker" size={20} color={COLORS.primary} />
+                    <Text style={styles.statValue}>—</Text>
+                    <Text style={styles.statLabel}>Distance</Text>
+                  </View>
+                </View>
 
-        {/* Bottom Action Bar */}
-        <SafeAreaView style={styles.footer}>
-          <View style={styles.footerContent}>
-            <View>
-              <Text style={styles.priceLabel}>Consultation</Text>
-              <Text style={styles.price}>
-                {primaryService?.price_cents ? `$${(primaryService.price_cents / 100).toFixed(0)}` : '—'}
-              </Text>
-            </View>
-            <Button 
-              title="Book Appointment" 
-              onPress={() =>
-                router.push({
-                  pathname: '/booking',
-                  params: {
-                    clinicId: clinic.id,
-                    serviceId: primaryService?.id?.toString() || '',
-                  },
-                })
-              } 
-              size="lg"
-              style={{ width: 200 }}
-            />
-          </View>
-        </SafeAreaView>
-      </View>
+                {/* Address */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Location</Text>
+                  <Text style={styles.text}>{address}</Text>
+                  <Text style={styles.subText}>{clinic.timezone}</Text>
+                </View>
+
+                {/* About */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>About</Text>
+                  <Text style={styles.text}>{clinic.description || '—'}</Text>
+                </View>
+
+                {/* Services */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Services</Text>
+                  <View style={styles.servicesGrid}>
+                    {clinic.services.map((service) => (
+                      <View key={service.id} style={styles.serviceTag}>
+                        <Text style={styles.serviceText}>{service.name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+
+              </View>
+            </ScrollView>
+
+            {/* Bottom Action Bar */}
+            <SafeAreaView style={styles.footer}>
+              <View style={styles.footerContent}>
+                <View>
+                  <Text style={styles.priceLabel}>Consultation</Text>
+                  <Text style={styles.price}>
+                    {primaryService?.price_cents ? `$${(primaryService.price_cents / 100).toFixed(0)}` : '—'}
+                  </Text>
+                </View>
+                <Button 
+                  title="Book Appointment" 
+                  onPress={() =>
+                    router.push({
+                      pathname: '/booking',
+                      params: {
+                        clinicId: clinic.id,
+                        serviceId: primaryService?.id?.toString() || '',
+                      },
+                    })
+                  } 
+                  size="lg"
+                  style={{ width: 200 }}
+                />
+              </View>
+            </SafeAreaView>
+          </>
         )}
+      </View>
     </>
   );
 }
