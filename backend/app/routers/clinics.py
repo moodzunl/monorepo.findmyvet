@@ -10,8 +10,8 @@ GET    /api/v1/services               - List all services
 GET    /api/v1/species                - List all species
 GET    /api/v1/species/{id}/breeds    - List breeds for species
 """
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
-from typing import Optional, List
+from fastapi import APIRouter, Depends, HTTPException, Query, Path, status
+from typing import Optional, List, Annotated
 from uuid import UUID
 from datetime import datetime
 from math import radians, sin, cos, asin, sqrt
@@ -24,10 +24,12 @@ from app.schemas.clinics import (
     VetDetailResponse,
     VetSummaryResponse,
 )
+from app.schemas.provider_services import ProviderServiceUpsertRequest, ProviderServiceUpdateRequest
 from app.schemas.users import SpeciesResponse, BreedResponse
 from app.db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+from app.security.provider_access import require_clinic_admin
 
 router = APIRouter()
 
@@ -438,6 +440,199 @@ async def get_clinic_services(
         )
     ).mappings().all()
     return [dict(r) for r in rows]
+
+@router.post(
+    "/{clinic_id}/services",
+    response_model=ServiceResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add/enable a service for a clinic (Clinic Admin)",
+    responses={
+        201: {"description": "Service enabled for clinic"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Must be clinic admin"},
+        404: {"description": "Clinic or service not found"},
+        409: {"description": "Service already enabled"},
+    },
+)
+async def add_clinic_service(
+    request: ProviderServiceUpsertRequest,
+    clinic_id: UUID = Depends(require_clinic_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    # Ensure clinic exists (helps return 404 vs FK error messages)
+    clinic_exists = (await db.execute(text("SELECT 1 FROM clinics WHERE id = :id"), {"id": str(clinic_id)})).first()
+    if not clinic_exists:
+        raise HTTPException(status_code=404, detail="Clinic not found")
+
+    # Ensure service exists and active
+    svc = (
+        await db.execute(
+            text(
+                """
+                SELECT id, name, slug, description, is_emergency, supports_home_visit
+                FROM services
+                WHERE id = :service_id AND is_active = TRUE
+                """
+            ),
+            {"service_id": request.service_id},
+        )
+    ).mappings().first()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    # Prevent duplicates (unique constraint exists)
+    existing = (
+        await db.execute(
+            text(
+                """
+                SELECT 1
+                FROM clinic_services
+                WHERE clinic_id = :clinic_id AND service_id = :service_id
+                """
+            ),
+            {"clinic_id": str(clinic_id), "service_id": request.service_id},
+        )
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Service already exists for this clinic. Use PATCH to update.")
+
+    row = (
+        await db.execute(
+            text(
+                """
+                INSERT INTO clinic_services (clinic_id, service_id, duration_min, price_cents, is_active, created_at)
+                VALUES (:clinic_id, :service_id, :duration_min, :price_cents, :is_active, NOW())
+                RETURNING duration_min, price_cents
+                """
+            ),
+            {
+                "clinic_id": str(clinic_id),
+                "service_id": request.service_id,
+                "duration_min": request.duration_min,
+                "price_cents": request.price_cents,
+                "is_active": request.is_active,
+            },
+        )
+    ).mappings().first()
+    await db.commit()
+
+    return {
+        "id": svc["id"],
+        "name": svc["name"],
+        "slug": svc["slug"],
+        "description": svc["description"],
+        "duration_min": row["duration_min"] if row else request.duration_min,
+        "price_cents": row["price_cents"] if row else request.price_cents,
+        "is_emergency": bool(svc["is_emergency"]),
+        "supports_home_visit": bool(svc["supports_home_visit"]),
+    }
+
+
+@router.patch(
+    "/{clinic_id}/services/{service_id}",
+    response_model=ServiceResponse,
+    summary="Update a clinic service (Clinic Admin)",
+    responses={
+        200: {"description": "Service updated"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Must be clinic admin"},
+        404: {"description": "Clinic service not found"},
+    },
+)
+async def update_clinic_service(
+    service_id: int,
+    request: ProviderServiceUpdateRequest,
+    clinic_id: UUID = Depends(require_clinic_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    # Fetch service template (needed for response)
+    svc = (
+        await db.execute(
+            text(
+                """
+                SELECT id, name, slug, description, is_emergency, supports_home_visit
+                FROM services
+                WHERE id = :service_id
+                """
+            ),
+            {"service_id": service_id},
+        )
+    ).mappings().first()
+    if not svc:
+        raise HTTPException(status_code=404, detail="Service not found")
+
+    # Update row (partial)
+    row = (
+        await db.execute(
+            text(
+                """
+                UPDATE clinic_services
+                SET
+                  duration_min = COALESCE(:duration_min, duration_min),
+                  price_cents = COALESCE(:price_cents, price_cents),
+                  is_active = COALESCE(:is_active, is_active)
+                WHERE clinic_id = :clinic_id AND service_id = :service_id
+                RETURNING duration_min, price_cents, is_active
+                """
+            ),
+            {
+                "clinic_id": str(clinic_id),
+                "service_id": service_id,
+                "duration_min": request.duration_min,
+                "price_cents": request.price_cents,
+                "is_active": request.is_active,
+            },
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Clinic service not found")
+    await db.commit()
+
+    return {
+        "id": svc["id"],
+        "name": svc["name"],
+        "slug": svc["slug"],
+        "description": svc["description"],
+        "duration_min": row["duration_min"],
+        "price_cents": row["price_cents"],
+        "is_emergency": bool(svc["is_emergency"]),
+        "supports_home_visit": bool(svc["supports_home_visit"]),
+    }
+
+
+@router.delete(
+    "/{clinic_id}/services/{service_id}",
+    response_model=dict,
+    summary="Disable a clinic service (Clinic Admin)",
+    responses={
+        200: {"description": "Service disabled"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Must be clinic admin"},
+        404: {"description": "Clinic service not found"},
+    },
+)
+async def disable_clinic_service(
+    service_id: int,
+    clinic_id: UUID = Depends(require_clinic_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    row = (
+        await db.execute(
+            text(
+                """
+                UPDATE clinic_services
+                SET is_active = FALSE
+                WHERE clinic_id = :clinic_id AND service_id = :service_id
+                RETURNING id
+                """
+            ),
+            {"clinic_id": str(clinic_id), "service_id": service_id},
+        )
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Clinic service not found")
+    await db.commit()
+    return {"status": "disabled"}
 
 
 @router.get(

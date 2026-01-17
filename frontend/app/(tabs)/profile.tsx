@@ -1,29 +1,57 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Image, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Card } from '../../components/ui/Card';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { StatusBar } from 'expo-status-bar';
-import { useClerk, useUser } from '@clerk/clerk-expo';
-
-// Mock pets (until we store pets server-side)
-const PETS = [
-  { id: '1', name: 'Max', type: 'Dog', breed: 'Golden Retriever' },
-  { id: '2', name: 'Bella', type: 'Cat', breed: 'Siamese' },
-];
+import { useClerk, useUser, useAuth } from '@clerk/clerk-expo';
+import { apiFetch } from '../../lib/api';
+import { PetListResponse, PetOut } from '../../types/api';
 
 const MENU_ITEMS = [
-  { id: '1', label: 'Account Settings', icon: 'user-o' as const },
-  { id: '2', label: 'Notifications', icon: 'bell-o' as const },
-  { id: '3', label: 'Payment Methods', icon: 'credit-card' as const },
-  { id: '4', label: 'Help & Support', icon: 'question-circle-o' as const },
+  { id: '1', label: 'Account Settings', icon: 'user-o' as const, route: '/profile/account-settings' },
+  { id: '2', label: 'Notifications', icon: 'bell-o' as const, route: '/profile/notifications' },
+  { id: '3', label: 'Payment Methods', icon: 'credit-card' as const, route: '/profile/payment-methods' },
+  { id: '4', label: 'Help & Support', icon: 'question-circle-o' as const, route: '/profile/help-support' },
 ];
+
+const ADMIN_EMAIL = 'ferarersunl@hotmail.com';
 
 export default function ProfileScreen() {
   const { signOut } = useClerk();
   const { user } = useUser();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
+  const [pets, setPets] = useState<PetOut[]>([]);
+  const [loadingPets, setLoadingPets] = useState(true);
+
+  // Prevent infinite loops if Clerk's getToken function identity changes between renders.
+  const getTokenRef = useRef(getToken);
+  useEffect(() => {
+    getTokenRef.current = getToken;
+  }, [getToken]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+
+    const fetchPets = async () => {
+      setLoadingPets(true);
+      try {
+        const response = await apiFetch<PetListResponse>('/api/v1/pets', {
+          getToken: (opts) => getTokenRef.current(opts),
+          tokenTemplate: 'backend',
+        });
+        setPets(response.pets);
+      } catch (error) {
+        console.error('Failed to fetch pets:', error);
+      } finally {
+        setLoadingPets(false);
+      }
+    };
+
+    fetchPets();
+  }, [isLoaded, isSignedIn]);
 
   const displayName =
     user?.fullName ??
@@ -33,6 +61,8 @@ export default function ProfileScreen() {
 
   const email = user?.primaryEmailAddress?.emailAddress ?? '';
   const avatarUrl = user?.imageUrl;
+  
+  const isAdmin = email === ADMIN_EMAIL;
 
   const handleLogout = () => {
     Alert.alert('Logout', 'Are you sure you want to logout?', [
@@ -73,7 +103,7 @@ export default function ProfileScreen() {
           />
           <Text style={styles.name}>{displayName}</Text>
           {!!email && <Text style={styles.email}>{email}</Text>}
-          <TouchableOpacity style={styles.editButton}>
+          <TouchableOpacity style={styles.editButton} onPress={() => router.push('/profile/account-settings')}>
             <Text style={styles.editButtonText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
@@ -81,28 +111,64 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} style={styles.scrollView}>
         
+        {/* Admin Dashboard Link */}
+        {isAdmin && (
+          <View style={styles.section}>
+            <TouchableOpacity 
+              style={styles.adminCard}
+              onPress={() => router.push('/admin/dashboard')}
+            >
+              <View style={styles.adminIconBox}>
+                <MaterialCommunityIcons name="shield-account" size={24} color={COLORS.white} />
+              </View>
+              <View style={styles.adminTextContainer}>
+                <Text style={styles.adminTitle}>Admin Dashboard</Text>
+                <Text style={styles.adminSubtitle}>Manage users and applications</Text>
+              </View>
+              <FontAwesome name="chevron-right" size={14} color={COLORS.white} />
+            </TouchableOpacity>
+          </View>
+        )}
+        
         {/* My Pets */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>My Pets</Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/onboarding/pet-name')}>
               <Text style={styles.addPetText}>+ Add Pet</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.petsScroll}>
-            {PETS.map(pet => (
-              <Card key={pet.id} style={styles.petCard} padding="sm">
-                <View style={styles.petIconPlaceholder}>
-                  <MaterialCommunityIcons 
-                    name={getPetIcon(pet.type)} 
-                    size={24} 
-                    color={COLORS.primary} 
-                  />
+            {loadingPets ? (
+              <View style={styles.loadingPetsContainer}>
+                <ActivityIndicator color={COLORS.primary} />
+              </View>
+            ) : pets.length > 0 ? (
+              pets.map(pet => (
+                <Card key={pet.id} style={styles.petCard} padding="sm">
+                  <View style={styles.petIconPlaceholder}>
+                    <MaterialCommunityIcons 
+                      name={getPetIcon(pet.species.name)} 
+                      size={24} 
+                      color={COLORS.primary} 
+                    />
+                  </View>
+                  <Text style={styles.petName}>{pet.name}</Text>
+                  <Text style={styles.petDetail}>{pet.breed?.name || pet.species.name}</Text>
+                </Card>
+              ))
+            ) : (
+              <TouchableOpacity 
+                style={styles.emptyPetsCard} 
+                onPress={() => router.push('/onboarding/pet-name')}
+              >
+                <View style={styles.placeholderIconCircle}>
+                  <MaterialCommunityIcons name="paw" size={24} color={COLORS.textLight} style={{ opacity: 0.6 }} />
                 </View>
-                <Text style={styles.petName}>{pet.name}</Text>
-                <Text style={styles.petDetail}>{pet.breed}</Text>
-              </Card>
-            ))}
+                <Text style={styles.emptyPetsTitle}>No pets yet</Text>
+                <Text style={styles.emptyPetsSubtitle}>Tap to add your first furry friend</Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </View>
 
@@ -117,6 +183,7 @@ export default function ProfileScreen() {
                   styles.menuItem,
                   index === MENU_ITEMS.length - 1 && styles.lastMenuItem
                 ]}
+                onPress={() => router.push(item.route as any)}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.menuIconBox}>
@@ -245,6 +312,45 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
   },
+  loadingPetsContainer: {
+    padding: SPACING.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 120,
+  },
+  emptyPetsCard: {
+    width: 200,
+    padding: SPACING.md,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderStyle: 'dotted',
+    borderRadius: RADIUS.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(107, 114, 128, 0.03)',
+    marginLeft: 2,
+  },
+  placeholderIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(107, 114, 128, 0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: SPACING.sm,
+  },
+  emptyPetsTitle: {
+    fontSize: FONT_SIZE.sm,
+    fontWeight: '700',
+    color: COLORS.text,
+    marginBottom: 2,
+  },
+  emptyPetsSubtitle: {
+    fontSize: FONT_SIZE.xs,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    opacity: 0.8,
+  },
   menuContainer: {
     backgroundColor: COLORS.white,
     borderRadius: RADIUS.lg,
@@ -297,5 +403,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: COLORS.textLight,
     fontSize: FONT_SIZE.xs,
+  },
+  // Admin Styles
+  adminCard: {
+    backgroundColor: '#374151', // Dark Gray
+    borderRadius: RADIUS.lg,
+    padding: SPACING.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  adminIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: RADIUS.full,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+  },
+  adminTextContainer: {
+    flex: 1,
+  },
+  adminTitle: {
+    fontSize: FONT_SIZE.md,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  adminSubtitle: {
+    fontSize: FONT_SIZE.xs,
+    color: 'rgba(255,255,255,0.7)',
   },
 });

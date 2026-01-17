@@ -55,6 +55,14 @@ class Settings(BaseSettings):
     # get recreated/reset. Keep this False in production.
     allow_clerk_email_relink: bool = False
     
+    # Admin / backoffice
+    # Used to protect reviewer endpoints (approve/reject applications) until a proper admin UI + roles exist.
+    # Set PROVIDER_REVIEW_API_KEY in backend/.env.
+    provider_review_api_key: str | None = None
+    
+    # The email address that has full admin access
+    admin_email: str = "ferarersunl@hotmail.com"
+    
     # CORS
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
     
@@ -65,5 +73,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
-
+    # In some environments (like sandboxed CI runners) reading `.env` can be disallowed.
+    # Fall back to environment-only settings in that case.
+    try:
+        return Settings()
+    except (PermissionError, OSError):
+        return Settings(_env_file=None)

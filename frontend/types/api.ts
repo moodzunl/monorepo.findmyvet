@@ -114,4 +114,31 @@ export interface AvailabilityResponse {
   }>;
 }
 
+export interface PetOut {
+  id: string;
+  owner_id: string;
+  name: string;
+  species: {
+    id: number;
+    name: string;
+  };
+  breed?: {
+    id: number;
+    species_id: number;
+    name: string;
+  } | null;
+  date_of_birth?: string | null;
+  weight_kg?: number | null;
+  sex?: string | null;
+  is_neutered?: boolean | null;
+  photo_url?: string | null;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PetListResponse {
+  pets: PetOut[];
+}
+
 

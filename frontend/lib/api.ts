@@ -26,10 +26,27 @@ export async function apiFetch<T>(
   });
 
   if (!res.ok) {
-    let detail = `Request failed (${res.status})`;
+    let detail: string = `Request failed (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`;
     try {
       const body = await res.json();
-      detail = body?.detail || detail;
+
+      const rawDetail = body?.detail ?? body?.message ?? body;
+      if (typeof rawDetail === 'string') {
+        detail = rawDetail;
+      } else if (Array.isArray(rawDetail)) {
+        // FastAPI validation errors: list of { loc, msg, type }
+        const msgs = rawDetail
+          .map((e) => {
+            if (typeof e === 'string') return e;
+            const msg = e?.msg ? String(e.msg) : JSON.stringify(e);
+            const loc = Array.isArray(e?.loc) ? e.loc.join('.') : e?.loc ? String(e.loc) : '';
+            return loc ? `${loc}: ${msg}` : msg;
+          })
+          .filter(Boolean);
+        detail = msgs.length ? msgs.join('\n') : detail;
+      } else if (rawDetail && typeof rawDetail === 'object') {
+        detail = JSON.stringify(rawDetail);
+      }
     } catch {
       // ignore
     }

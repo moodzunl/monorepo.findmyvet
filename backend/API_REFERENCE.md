@@ -260,6 +260,40 @@ Get clinic details by slug (explicit path to avoid route ambiguity).
 
 ---
 
+## 2b. Service Catalog & Provider Service Management
+
+### GET /services
+
+List the **global service catalog** (platform-managed templates).
+
+Providers (clinics and verified freelancer vets) enable items from this catalog and set their own:
+- `duration_min`
+- `price_cents` (optional)
+- active/inactive
+
+**Query params:**
+- `is_emergency` (optional)
+- `supports_home_visit` (optional)
+
+### Clinic Admin: manage clinic services
+
+- `POST /clinics/{clinic_id}/services` (enable/add)
+- `PATCH /clinics/{clinic_id}/services/{service_id}` (update)
+- `DELETE /clinics/{clinic_id}/services/{service_id}` (disable)
+
+### Freelancer Vets: manage vet services
+
+- `GET /vets/{vet_id}/services` (public list)
+- `GET /vets/me/services` (authenticated)
+- `POST /vets/me/services` (authenticated)
+- `PATCH /vets/me/services/{service_id}` (authenticated)
+- `DELETE /vets/me/services/{service_id}` (authenticated)
+
+**Access rules:**
+- Only **verified freelancer vets** can manage their own menu (`vets.is_verified=true` and `vets.is_freelancer=true`).
+
+---
+
 ## 3. Availability Endpoints
 
 ### POST /availability/slots
