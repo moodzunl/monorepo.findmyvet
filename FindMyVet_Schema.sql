@@ -197,6 +197,29 @@ CREATE INDEX idx_user_roles_user ON user_roles(user_id);
 CREATE INDEX idx_user_roles_clinic ON user_roles(clinic_id) WHERE clinic_id IS NOT NULL;
 
 -- ============================================================================
+-- 7b. PROVIDER APPLICATIONS (Vet/Clinic Upgrade Requests)
+-- ============================================================================
+-- Users can submit an application to become a verified vet or a clinic admin.
+-- Your team reviews these and approves/rejects them.
+CREATE TABLE provider_applications (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id             UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider_type       VARCHAR(20) NOT NULL CHECK (provider_type IN ('vet', 'clinic')),
+    status              VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'approved', 'rejected')) DEFAULT 'pending',
+    -- Flexible payload from the onboarding form (license, clinic details, etc.)
+    data                JSONB NOT NULL DEFAULT '{}'::jsonb,
+    submitted_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    reviewed_at         TIMESTAMPTZ,
+    rejection_reason    TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_provider_applications_user ON provider_applications(user_id);
+CREATE INDEX idx_provider_applications_status ON provider_applications(status);
+CREATE INDEX idx_provider_applications_submitted ON provider_applications(submitted_at DESC);
+
+-- ============================================================================
 -- 8. AUTH TOKENS
 -- ============================================================================
 
@@ -272,6 +295,26 @@ CREATE TABLE clinic_services (
 CREATE INDEX idx_clinic_services_clinic ON clinic_services(clinic_id);
 CREATE INDEX idx_clinic_services_service ON clinic_services(service_id);
 CREATE INDEX idx_clinic_services_active ON clinic_services(clinic_id, is_active) WHERE is_active = TRUE;
+
+-- ============================================================================
+-- 11b. VET SERVICES (Freelancer catalog)
+-- ============================================================================
+-- Services offered by a freelancer vet (with pricing/duration overrides).
+-- Mirrors `clinic_services`, but scoped to a single vet.
+CREATE TABLE vet_services (
+    id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    vet_id          UUID NOT NULL REFERENCES vets(id) ON DELETE CASCADE,
+    service_id      INT NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+    duration_min    INT NOT NULL,
+    price_cents     INT,  -- "Starting at" price (optional)
+    is_active       BOOLEAN DEFAULT TRUE,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(vet_id, service_id)
+);
+
+CREATE INDEX idx_vet_services_vet ON vet_services(vet_id);
+CREATE INDEX idx_vet_services_service ON vet_services(service_id);
+CREATE INDEX idx_vet_services_active ON vet_services(vet_id, is_active) WHERE is_active = TRUE;
 
 -- ============================================================================
 -- 12. AVAILABILITY SLOTS

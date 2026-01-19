@@ -54,6 +54,43 @@ class _FakeDB:
         if "FROM availability_slots s" in q and "MIN(" in q:
             return _FakeResult(first={"next_available_slot": None})
 
+        # global services catalog
+        if "FROM services" in q and "SELECT id, name, slug" in q:
+            return _FakeResult(
+                rows=[
+                    {
+                        "id": 1,
+                        "name": "General Exam",
+                        "slug": "general-exam",
+                        "description": "Routine exam",
+                        "default_duration_min": 30,
+                        "is_emergency": False,
+                        "supports_home_visit": True,
+                    }
+                ]
+            )
+
+        # vet exists
+        if "FROM vets WHERE id" in q and "SELECT 1" in q:
+            return _FakeResult(first={"?": 1})
+
+        # vet services list
+        if "FROM vet_services vs" in q and "JOIN services s" in q:
+            return _FakeResult(
+                rows=[
+                    {
+                        "id": 1,
+                        "name": "General Exam",
+                        "slug": "general-exam",
+                        "description": "Routine exam",
+                        "duration_min": 30,
+                        "price_cents": 9000,
+                        "is_emergency": False,
+                        "supports_home_visit": True,
+                    }
+                ]
+            )
+
         return _FakeResult(rows=[])
 
     async def commit(self):
@@ -87,5 +124,36 @@ def test_clinics_search_returns_shape():
     assert body["clinics"][0]["id"]
     assert "distance_km" in body["clinics"][0]
     app.dependency_overrides.clear()
+
+
+def test_services_catalog_route_exists():
+    app.dependency_overrides[get_db] = _override_get_db
+    client = TestClient(app)
+    res = client.get("/api/v1/services")
+    assert res.status_code == 200
+    body = res.json()
+    assert isinstance(body, list)
+    assert body[0]["id"] == 1
+    assert body[0]["price_cents"] is None
+    app.dependency_overrides.clear()
+
+
+def test_vet_services_public_list_shape():
+    app.dependency_overrides[get_db] = _override_get_db
+    client = TestClient(app)
+    res = client.get("/api/v1/vets/880e8400-e29b-41d4-a716-446655440003/services")
+    assert res.status_code == 200
+    body = res.json()
+    assert isinstance(body, list)
+    assert body[0]["id"] == 1
+    assert "duration_min" in body[0]
+    app.dependency_overrides.clear()
+
+
+def test_vets_me_services_route_is_not_shadowed_by_vet_id_route():
+    # If routing is wrong, FastAPI treats "me" as {vet_id} and returns 422 UUID error.
+    client = TestClient(app)
+    res = client.get("/api/v1/vets/me/services")
+    assert res.status_code == 401
 
 

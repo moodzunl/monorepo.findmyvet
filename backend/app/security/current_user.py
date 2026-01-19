@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.models.user import User
+from app.config import Settings, get_settings
 from app.security.clerk import require_clerk_auth
 
 
@@ -37,7 +38,9 @@ def _get_claim(claims: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-async def upsert_user_from_clerk_claims(db: AsyncSession, claims: dict[str, Any]) -> User:
+async def upsert_user_from_clerk_claims(
+    db: AsyncSession, claims: dict[str, Any], settings: Settings
+) -> User:
     clerk_user_id = str(claims.get("sub") or "").strip()
     if not clerk_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token (sub missing)")
@@ -67,26 +70,53 @@ async def upsert_user_from_clerk_claims(db: AsyncSession, claims: dict[str, Any]
     if existing:
         # If email matches an existing user that belongs to a different Clerk user, block.
         if existing.clerk_user_id and existing.clerk_user_id != clerk_user_id:
+            # In local/dev environments Clerk users can be recreated, causing the same email to
+            # appear under a new Clerk user id. Allow opting into "relink by email" to avoid
+            # hard 409 loops during development.
+            if settings.debug or settings.allow_clerk_email_relink:
+                # Only write if something actually changed (avoid update spam on every request).
+                values: dict[str, Any] = {}
+                if existing.clerk_user_id != clerk_user_id:
+                    values["clerk_user_id"] = clerk_user_id
+                if existing.email != str(email):
+                    values["email"] = str(email)
+                if existing.first_name != first_name:
+                    values["first_name"] = first_name
+                if existing.last_name != last_name:
+                    values["last_name"] = last_name
+                if existing.avatar_url != avatar_url:
+                    values["avatar_url"] = avatar_url
+
+                if values:
+                    values["updated_at"] = now
+                    await db.execute(update(User).where(User.id == existing.id).values(**values))
+                    await db.commit()
+                    await db.refresh(existing)
+                return existing
+
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email already linked to a different account.",
             )
 
-        # Link clerk_user_id if missing and update profile fields.
-        await db.execute(
-            update(User)
-            .where(User.id == existing.id)
-            .values(
-                clerk_user_id=clerk_user_id,
-                email=str(email),
-                first_name=first_name,
-                last_name=last_name,
-                avatar_url=avatar_url,
-                updated_at=now,
-            )
-        )
-        await db.commit()
-        await db.refresh(existing)
+        # Link clerk_user_id if missing and update profile fields (only when changed).
+        values: dict[str, Any] = {}
+        if existing.clerk_user_id != clerk_user_id:
+            values["clerk_user_id"] = clerk_user_id
+        if existing.email != str(email):
+            values["email"] = str(email)
+        if existing.first_name != first_name:
+            values["first_name"] = first_name
+        if existing.last_name != last_name:
+            values["last_name"] = last_name
+        if existing.avatar_url != avatar_url:
+            values["avatar_url"] = avatar_url
+
+        if values:
+            values["updated_at"] = now
+            await db.execute(update(User).where(User.id == existing.id).values(**values))
+            await db.commit()
+            await db.refresh(existing)
         return existing
 
     # Create new user row
@@ -108,7 +138,8 @@ async def upsert_user_from_clerk_claims(db: AsyncSession, claims: dict[str, Any]
 async def get_current_user(
     claims: Annotated[dict[str, Any], Depends(require_clerk_auth)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> User:
-    return await upsert_user_from_clerk_claims(db, claims)
+    return await upsert_user_from_clerk_claims(db, claims, settings)
 
 

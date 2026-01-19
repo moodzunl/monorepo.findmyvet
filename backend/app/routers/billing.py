@@ -263,32 +263,33 @@ async def list_freelancer_sessions(
 ):
     """
     List sessions for the authenticated freelancer vet.
-    
-    Shows earnings per session and payout status.
-    
-    **Example response:**
-    ```json
-    {
+    """
+    # Mock data for frontend development
+    return {
         "sessions": [
             {
-                "id": "ff0e8400...",
-                "session_date": "2024-01-16",
+                "id": "ff0e8400-e29b-41d4-a716-446655440001",
+                "session_date": "2026-01-18",
                 "session_amount_cents": 12000,
                 "platform_fee_cents": 1800,
                 "vet_payout_cents": 10200,
                 "payout_status": "pending"
+            },
+            {
+                "id": "ff0e8400-e29b-41d4-a716-446655440002",
+                "session_date": "2026-01-17",
+                "session_amount_cents": 15000,
+                "platform_fee_cents": 2250,
+                "vet_payout_cents": 12750,
+                "payout_status": "pending"
             }
         ],
-        "total": 25,
-        "total_earnings_cents": 255000,
-        "total_pending_cents": 45000,
+        "total": 2,
+        "total_earnings_cents": 27000,
+        "total_pending_cents": 22950,
         "page": 1,
         "page_size": 20
     }
-    ```
-    """
-    # TODO: Implement list sessions
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 @router.get(
@@ -303,22 +304,19 @@ async def list_freelancer_sessions(
 async def get_freelancer_stats():
     """
     Get earnings summary for the authenticated freelancer.
-    
-    **Example response:**
-    ```json
-    {
+    """
+    # Mock data for frontend development
+    return {
         "total_sessions": 45,
         "total_earnings_cents": 540000,
         "pending_payout_cents": 45000,
-        "last_payout_date": "2024-01-15",
+        "last_payout_date": "2026-01-15",
         "last_payout_cents": 120000,
         "this_month_sessions": 8,
-        "this_month_earnings_cents": 96000
+        "this_month_earnings_cents": 96000,
+        "pending_appointments_count": 12,
+        "total_cash_flow_cents": 750000
     }
-    ```
-    """
-    # TODO: Implement stats
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 # =============================================================================
@@ -342,30 +340,34 @@ async def list_payouts(
 ):
     """
     List all payouts for the authenticated freelancer.
-    
-    **Example response:**
-    ```json
-    {
+    """
+    # Mock data for frontend development
+    return {
         "payouts": [
             {
-                "id": "gg0e8400...",
+                "id": "gg0e8400-e29b-41d4-a716-446655440001",
                 "amount_cents": 45000,
                 "session_count": 5,
-                "period_start": "2024-01-01",
-                "period_end": "2024-01-15",
+                "period_start": "2026-01-01",
+                "period_end": "2026-01-15",
                 "status": "completed",
-                "paid_at": "2024-01-16T00:00:00Z"
+                "paid_at": "2026-01-16T10:00:00Z"
+            },
+            {
+                "id": "gg0e8400-e29b-41d4-a716-446655440002",
+                "amount_cents": 120000,
+                "session_count": 12,
+                "period_start": "2025-12-15",
+                "period_end": "2025-12-31",
+                "status": "completed",
+                "paid_at": "2026-01-02T10:00:00Z"
             }
         ],
-        "total": 8,
-        "total_paid_cents": 360000,
+        "total": 2,
+        "total_paid_cents": 165000,
         "page": 1,
         "page_size": 20
     }
-    ```
-    """
-    # TODO: Implement list payouts
-    raise HTTPException(status_code=501, detail="Not implemented")
 
 
 @router.post(

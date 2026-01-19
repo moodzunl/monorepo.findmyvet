@@ -17,7 +17,8 @@ import { FontAwesome } from '@expo/vector-icons';
 import { COLORS, SPACING, FONT_SIZE, RADIUS } from '../../constants/theme';
 import { Button } from '../../components/ui/Button';
 import { StatusBar } from 'expo-status-bar';
-import { isClerkAPIResponseError, useSignIn } from '@clerk/clerk-expo';
+import { isClerkAPIResponseError, useSSO, useSignIn } from '@clerk/clerk-expo';
+import * as Linking from 'expo-linking';
 
 const { height } = Dimensions.get('window');
 
@@ -25,8 +26,10 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [oauthSubmitting, setOauthSubmitting] = useState(false);
 
   const { isLoaded, signIn, setActive } = useSignIn();
+  const { startSSOFlow } = useSSO();
 
   const handleLogin = async () => {
     if (!isLoaded) return;
@@ -60,6 +63,39 @@ export default function LoginScreen() {
       }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    if (!isLoaded) return;
+    try {
+      setOauthSubmitting(true);
+      const redirectUrl = Linking.createURL('/', { scheme: 'findmyvet' });
+
+      const result = await startSSOFlow({ strategy: 'oauth_google', redirectUrl });
+      if (result.createdSessionId) {
+        await result.setActive?.({ session: result.createdSessionId });
+        // Clerk uses "transferable" to indicate the SSO flow needs to create a user (signup).
+        // This is the most reliable signal for "new user" vs "existing user" in one Google button.
+        const isNewUser =
+          result.signIn?.firstFactorVerification?.status === 'transferable' ||
+          Boolean(result.signUp?.createdSessionId);
+        router.replace(isNewUser ? '/onboarding/pet-name' : '/(tabs)');
+        return;
+      }
+
+      Alert.alert('Login incomplete', 'Please finish signing in with Google.');
+    } catch (err: unknown) {
+      if (isClerkAPIResponseError(err)) {
+        Alert.alert(
+          'Google login failed',
+          err.errors?.[0]?.longMessage ?? 'Please try again.'
+        );
+      } else {
+        Alert.alert('Google login failed', 'Please try again.');
+      }
+    } finally {
+      setOauthSubmitting(false);
     }
   };
 
@@ -154,21 +190,31 @@ export default function LoginScreen() {
               </View>
 
               <View style={styles.socialButtonsContainer}>
-                <TouchableOpacity style={styles.socialButton}>
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  onPress={handleGoogleLogin}
+                  disabled={!isLoaded || submitting || oauthSubmitting}
+                >
                   <FontAwesome
                     name='google'
                     size={20}
                     color='#DB4437'
                   />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  onPress={() => Alert.alert('Coming soon', 'Apple login is not implemented yet.')}
+                >
                   <FontAwesome
                     name='apple'
                     size={22}
                     color='#000000'
                   />
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.socialButton}>
+                <TouchableOpacity
+                  style={styles.socialButton}
+                  onPress={() => Alert.alert('Coming soon', 'Facebook login is not implemented yet.')}
+                >
                   <FontAwesome
                     name='facebook'
                     size={20}

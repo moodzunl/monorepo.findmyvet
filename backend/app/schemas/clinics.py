@@ -81,6 +81,8 @@ class ServiceResponse(BaseModel):
     price_cents: Optional[int]
     is_emergency: bool
     supports_home_visit: bool
+    category: Optional[str] = "Other"
+    icon_name: Optional[str] = "medkit"
     
     model_config = {
         "json_schema_extra": {
@@ -92,7 +94,9 @@ class ServiceResponse(BaseModel):
                 "duration_min": 30,
                 "price_cents": 7500,
                 "is_emergency": False,
-                "supports_home_visit": True
+                "supports_home_visit": True,
+                "category": "Wellness",
+                "icon_name": "medkit"
             }
         }
     }

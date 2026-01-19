@@ -6,6 +6,13 @@ import { useEffect } from 'react';
 import { COLORS } from '../constants/theme';
 import { ClerkLoaded, ClerkLoading, ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
+import * as WebBrowser from 'expo-web-browser';
+import { Platform } from 'react-native';
+
+// Only needed for web auth sessions.
+if (Platform.OS === 'web') {
+  WebBrowser.maybeCompleteAuthSession();
+}
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -14,6 +21,8 @@ export {
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
+  // Start on tabs; signed-out users will be redirected to /auth/login by AuthGate.
+  // (Tabs screens are already gated from firing authed API calls when signed out.)
   initialRouteName: '(tabs)',
 };
 
@@ -23,7 +32,7 @@ SplashScreen.preventAutoHideAsync();
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
 if (!publishableKey) {
   throw new Error(
-    'Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY. Set it in frontend/.env (see frontend/.env.example).'
+    'Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY. Set it in frontend/.env.'
   );
 }
 
@@ -62,24 +71,17 @@ function AuthGate() {
   const segments = useSegments();
   const router = useRouter();
 
+  const topLevel = segments[0];
+  const isInAuth = topLevel === 'auth';
+
   useEffect(() => {
     if (!isLoaded) return;
-
-    const topLevel = segments[0];
-    const isInAuth = topLevel === 'auth';
-    const authRoute = segments[1]; // e.g. 'login' | 'register'
 
     if (!isSignedIn && !isInAuth) {
       router.replace('/auth/login');
       return;
     }
-
-    // Only auto-redirect signed-in users away from the login screen.
-    // (Avoids fighting the register -> verified -> onboarding flow.)
-    if (isSignedIn && isInAuth && authRoute === 'login') {
-      router.replace('/(tabs)');
-    }
-  }, [isLoaded, isSignedIn, router, segments]);
+  }, [isLoaded, isSignedIn, isInAuth, router]);
 
   // Don't render anything until we know the auth state (prevents flash)
   if (!isLoaded) {
@@ -95,6 +97,9 @@ function RootLayoutNav() {
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
+      <Stack.Screen name="profile" options={{ headerShown: false }} />
+      <Stack.Screen name="provider" options={{ headerShown: false }} />
+      <Stack.Screen name="admin" options={{ headerShown: false }} />
       <Stack.Screen 
         name="clinic/[id]" 
         options={{ 
