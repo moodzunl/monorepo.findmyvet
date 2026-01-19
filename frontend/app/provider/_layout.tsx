@@ -15,7 +15,8 @@ export default function ProviderLayout() {
         <Stack.Screen name="clinic-details" options={{ title: 'Clinic Details' }} />
         <Stack.Screen name="review" options={{ title: 'Review & Submit' }} />
         <Stack.Screen name="status" options={{ title: 'Application Status' }} />
-        <Stack.Screen name="manage-services/index" options={{ title: 'Manage Services' }} />
+        <Stack.Screen name="manage-services" options={{ title: 'Manage Services' }} />
+        <Stack.Screen name="business" options={{ title: 'Business' }} />
       </Stack>
     </ProviderApplicationProvider>
   );

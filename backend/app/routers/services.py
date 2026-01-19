@@ -52,6 +52,26 @@ async def list_services(
         )
     ).mappings().all()
 
+    # Mapping of service names to categories and icons for the catalog
+    meta_mapping = {
+        "General Exam": ("Wellness", "medical"),
+        "Vaccination": ("Wellness", "shield-checkmark"),
+        "Sick Visit": ("Diagnostics", "bandage"),
+        "Sick Visit": ("Diagnostics", "bandage"),
+        "Dental Cleaning": ("Dental", "color-wand"),
+        "Surgery Consult": ("Surgery", "chatbubbles"),
+        "Spay/Neuter": ("Surgery", "cut"),
+        "X-Ray/Imaging": ("Diagnostics", "scan"),
+        "Lab Work": ("Diagnostics", "flask"),
+        "Emergency Visit": ("Emergency", "warning"),
+        "Home Visit — General": ("Home Care", "home"),
+        "Home Visit — End of Life": ("Home Care", "heart"),
+        "Grooming": ("Grooming", "sparkles"),
+        "Microchipping": ("Wellness", "hardware-chip"),
+        "Nail Trim": ("Grooming", "cut"),
+        "Follow-up Visit": ("Wellness", "repeat"),
+    }
+
     # Shape matches `ServiceResponse` but global catalog has no provider price override.
     return [
         {
@@ -63,6 +83,8 @@ async def list_services(
             "price_cents": None,
             "is_emergency": bool(r["is_emergency"]),
             "supports_home_visit": bool(r["supports_home_visit"]),
+            "category": meta_mapping.get(r["name"], ("Other", "medkit"))[0],
+            "icon_name": meta_mapping.get(r["name"], ("Other", "medkit"))[1],
         }
         for r in rows
     ]

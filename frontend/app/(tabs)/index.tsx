@@ -106,13 +106,6 @@ export default function HomeScreen() {
             <Text style={styles.greeting}>Good Morning,</Text>
             <Text style={styles.username}>{greetingName}</Text>
           </View>
-          <Button 
-            title="SOS" 
-            onPress={() => {}} 
-            variant="danger" 
-            size="sm"
-            style={styles.emergencyButton} 
-          />
         </View>
       </PageHeader>
 
@@ -245,18 +238,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   username: {
-    fontSize: FONT_SIZE.xl,
+    fontSize: FONT_SIZE.xxl,
     fontWeight: '800',
     color: COLORS.white,
-  },
-  emergencyButton: {
-    borderRadius: RADIUS.lg,
-    backgroundColor: COLORS.error,
-    borderWidth: 0,
-    paddingHorizontal: SPACING.lg,
-    paddingVertical: SPACING.sm,
-    minWidth: 64,
-    minHeight: 56,
   },
   categoriesContainer: {
     flexDirection: 'row',
